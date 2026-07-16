@@ -43,8 +43,15 @@ export type MonthBudget = {
   realExpenses: number;
   /** Gastos reales NO ligados a un fijo (extras del mes) */
   extraExpenses: number;
+  /**
+   * Exceso de los fijos este mes: cuánto ha crecido (o bajado) el sobregasto
+   * acumulado del año de los conceptos cuyo gasto real supera lo provisionado.
+   * Positivo = los fijos se han "comido" disponible; negativo = recuperas
+   * exceso de meses anteriores.
+   */
+  fixedOverrun: number;
   carryover: number;
-  /** ingresos del mes − provisiones − extras + carryover */
+  /** ingresos del mes − provisiones − extras − exceso de fijos + carryover */
   available: number;
   recurringExpenses: (RecurringExpense & { provision: number; realSpent: number })[];
   recurringIncomes: RecurringIncome[];
@@ -57,7 +64,11 @@ export async function getMonthBudget(
   month: string
 ): Promise<MonthBudget> {
   const end = monthEnd(month);
-  const [expensesQ, incomesQ, txQ, planQ, closureQ, prevClosureQ] =
+  const prevMonth = addMonths(month, -1);
+  // El sobregasto de fijos se mide sobre el acumulado del año, así que el mes
+  // anterior solo cuenta si es del mismo año (el fondo se resetea en enero).
+  const prevSameYear = prevMonth.slice(0, 4) === month.slice(0, 4);
+  const [expensesQ, incomesQ, txQ, planQ, closureQ, prevClosureQ, overrunNow, overrunPrev] =
     await Promise.all([
       supabase
         .from("recurring_expenses")
@@ -82,8 +93,10 @@ export async function getMonthBudget(
       supabase
         .from("month_closures")
         .select("*")
-        .eq("month", addMonths(month, -1))
+        .eq("month", prevMonth)
         .maybeSingle(),
+      getYearOverrun(supabase, month),
+      prevSameYear ? getYearOverrun(supabase, prevMonth) : Promise.resolve(0),
     ]);
 
   const recurringExpensesRaw = (expensesQ.data ?? []) as RecurringExpense[];
@@ -128,7 +141,12 @@ export async function getMonthBudget(
     .reduce((s, t) => s + t.amount, 0);
 
   const provisions = fixedProvisions + savingsTarget;
-  const available = realIncome - provisions - extraExpenses + carryover;
+  // Exceso de fijos: lo que ha crecido este mes el sobregasto acumulado del
+  // año. Así el gas de invierno tira primero del colchón provisionado y solo
+  // resta disponible cuando el fondo del concepto se agota.
+  const fixedOverrun = overrunNow - overrunPrev;
+  const available =
+    realIncome - provisions - extraExpenses - fixedOverrun + carryover;
 
   return {
     month,
@@ -138,6 +156,7 @@ export async function getMonthBudget(
     savingsTarget,
     realExpenses,
     extraExpenses,
+    fixedOverrun,
     carryover,
     available,
     recurringExpenses,
@@ -145,6 +164,19 @@ export async function getMonthBudget(
     transactions,
     closed: !!closureQ.data,
   };
+}
+
+/**
+ * Sobregasto acumulado del año hasta `month`: suma, por concepto de gasto
+ * fijo, de max(0, gasto real YTD − provisionado YTD). Es cuánto han excedido
+ * los fijos su colchón provisionado en lo que va de año.
+ */
+export async function getYearOverrun(
+  supabase: SupabaseClient,
+  month: string
+): Promise<number> {
+  const deviations = await getYearDeviations(supabase, month);
+  return deviations.reduce((s, d) => s + Math.max(0, -d.deviation), 0);
 }
 
 export type ConceptDeviation = {

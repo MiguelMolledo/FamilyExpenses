@@ -31,6 +31,7 @@ export function CloseMonth({ budget }: { budget: MonthBudget }) {
         provisions: budget.provisions,
         realExpenses: budget.realExpenses,
         extraExpenses: budget.extraExpenses,
+        fixedOverrun: budget.fixedOverrun,
         available: budget.available,
       },
     });

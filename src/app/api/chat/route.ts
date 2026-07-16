@@ -277,6 +277,7 @@ Reglas:
             provisiones: b.provisions,
             gasto_real: b.realExpenses,
             gastos_extra: b.extraExpenses,
+            exceso_fijos: b.fixedOverrun,
             disponible: b.available,
             cerrado: b.closed,
           };

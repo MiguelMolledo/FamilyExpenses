@@ -79,6 +79,10 @@ export default async function DashboardPage() {
           <p className="mt-2 text-xs text-muted-foreground">
             Ingresos {eur(budget.realIncome)} − provisiones{" "}
             {eur(budget.provisions)} − extras {eur(budget.extraExpenses)}
+            {budget.fixedOverrun > 0.005 &&
+              ` − exceso de fijos ${eur(budget.fixedOverrun)}`}
+            {budget.fixedOverrun < -0.005 &&
+              ` + exceso recuperado ${eur(-budget.fixedOverrun)}`}
             {budget.carryover !== 0 &&
               ` ${budget.carryover > 0 ? "+" : "−"} arrastre ${eur(Math.abs(budget.carryover))}`}
           </p>
