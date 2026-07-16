@@ -1,7 +1,11 @@
 -- FamilyExpenses: schema inicial
+-- Vive en el schema `family` (el proyecto Supabase se comparte con otras apps).
 -- Todas las tablas de negocio llevan family_id y RLS que aísla cada familia.
 
-create extension if not exists pgcrypto;
+create schema if not exists family;
+grant usage on schema family to anon, authenticated, service_role;
+
+set search_path = family, public;
 
 -- ============================================================
 -- Tablas
@@ -155,7 +159,7 @@ returns uuid
 language sql
 stable
 security definer
-set search_path = public
+set search_path = family, public
 as $$
   select family_id from profiles where user_id = auth.uid()
 $$;
@@ -232,7 +236,7 @@ create or replace function seed_family_defaults(fam_id uuid)
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = family, public
 as $$
 begin
   insert into categories (family_id, name, icon, kind) values
@@ -260,7 +264,7 @@ create or replace function create_family(family_name text, display_name text, un
 returns uuid
 language plpgsql
 security definer
-set search_path = public
+set search_path = family, public
 as $$
 declare
   fam_id uuid;
@@ -283,7 +287,7 @@ create or replace function join_family(code text, display_name text, uname text)
 returns uuid
 language plpgsql
 security definer
-set search_path = public
+set search_path = family, public
 as $$
 declare
   fam_id uuid;
@@ -310,7 +314,18 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = family, public
 as $$
   select exists (select 1 from profiles where username = uname)
 $$;
+
+-- ============================================================
+-- Grants (PostgREST accede con anon/authenticated; RLS sigue aplicando)
+-- ============================================================
+
+grant all on all tables in schema family to anon, authenticated, service_role;
+grant all on all sequences in schema family to anon, authenticated, service_role;
+grant execute on all functions in schema family to anon, authenticated, service_role;
+alter default privileges in schema family grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema family grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema family grant execute on functions to anon, authenticated, service_role;
