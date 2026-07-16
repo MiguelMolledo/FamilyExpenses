@@ -296,3 +296,97 @@ function monthsBetween(a: string, b: string): number {
   const [yb, mb] = b.split("-").map(Number);
   return (yb - ya) * 12 + (mb - ma);
 }
+
+export type YearMonthRow = {
+  month: string;
+  expectedIncome: number;
+  provisions: number; // fijos + ahorro
+  realIncome: number;
+  realExpenses: number;
+};
+
+export type YearOverview = {
+  months: YearMonthRow[];
+  totals: {
+    expectedIncome: number;
+    provisions: number;
+    realIncome: number;
+    realExpenses: number;
+  };
+};
+
+/** Vista anual: por cada mes del año, previsto vs real. */
+export async function getYearOverview(
+  supabase: SupabaseClient,
+  year: number
+): Promise<YearOverview> {
+  const jan = `${year}-01-01`;
+  const dec31 = `${year}-12-31`;
+
+  const [expensesQ, incomesQ, txQ, planQ] = await Promise.all([
+    supabase
+      .from("recurring_expenses")
+      .select("*")
+      .lte("starts_on", dec31)
+      .or(`ends_on.is.null,ends_on.gte.${jan}`),
+    supabase
+      .from("recurring_incomes")
+      .select("*")
+      .lte("starts_on", dec31)
+      .or(`ends_on.is.null,ends_on.gte.${jan}`),
+    supabase
+      .from("transactions")
+      .select("date, amount, type, recurring_income_id")
+      .gte("date", jan)
+      .lte("date", dec31),
+    supabase.from("savings_plans").select("*").maybeSingle(),
+  ]);
+
+  const recExpenses = (expensesQ.data ?? []) as RecurringExpense[];
+  const recIncomes = (incomesQ.data ?? []) as RecurringIncome[];
+  const savingsTarget = Number(planQ.data?.monthly_target ?? 0);
+
+  const months: YearMonthRow[] = [];
+  for (let m = 1; m <= 12; m++) {
+    const month = `${year}-${String(m).padStart(2, "0")}-01`;
+    const provisions =
+      recExpenses
+        .filter((e) => activeInMonth(e, month))
+        .reduce(
+          (s, e) =>
+            s + monthlyProvision({ amount: Number(e.amount), period: e.period }),
+          0
+        ) + savingsTarget;
+    const expectedIncome = recIncomes
+      .filter((i) => activeInMonth(i, month))
+      .reduce((s, i) => s + Number(i.amount), 0);
+    months.push({
+      month,
+      expectedIncome,
+      provisions,
+      realIncome: expectedIncome, // extraordinarios se suman abajo
+      realExpenses: 0,
+    });
+  }
+
+  for (const t of txQ.data ?? []) {
+    const idx = Number(t.date.slice(5, 7)) - 1;
+    const row = months[idx];
+    if (!row) continue;
+    if (t.type === "expense") row.realExpenses += Number(t.amount);
+    else if (!t.recurring_income_id) row.realIncome += Number(t.amount);
+  }
+
+  // Meses futuros: sin ingresos "reales" todavía
+  const totals = months.reduce(
+    (acc, r) => ({
+      expectedIncome: acc.expectedIncome + r.expectedIncome,
+      provisions: acc.provisions + r.provisions,
+      realIncome: acc.realIncome + r.realIncome,
+      realExpenses: acc.realExpenses + r.realExpenses,
+    }),
+    { expectedIncome: 0, provisions: 0, realIncome: 0, realExpenses: 0 }
+  );
+
+  return { months, totals };
+}
