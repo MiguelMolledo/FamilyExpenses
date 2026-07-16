@@ -91,7 +91,17 @@ export function SavingsMovementDialog({
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <Label>Tipo</Label>
-            <Select value={kind} onValueChange={(v) => onKindChange(v as Kind)}>
+            <Select
+              value={kind}
+              items={{
+                monthly: "Aportación del mes",
+                extra: "Aportación extra",
+                withdrawal: "Retirada",
+                interest: "Intereses",
+                set_balance: "Actualizar saldo total",
+              }}
+              onValueChange={(v) => onKindChange(v as Kind)}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>

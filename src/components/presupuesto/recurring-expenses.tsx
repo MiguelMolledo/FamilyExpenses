@@ -208,6 +208,7 @@ function ExpenseDialog({
               <Label>Periodo</Label>
               <Select
                 value={period}
+                items={{ monthly: "al mes", annual: "al año" }}
                 onValueChange={(v) => setPeriod(v as "monthly" | "annual")}
               >
                 <SelectTrigger>
@@ -229,6 +230,7 @@ function ExpenseDialog({
             <Label>Categoría</Label>
             <Select
               value={categoryId}
+              items={Object.fromEntries(categories.map((c) => [c.id, c.name]))}
               onValueChange={(v) => setCategoryId(v ?? "")}
             >
               <SelectTrigger>
@@ -248,6 +250,10 @@ function ExpenseDialog({
               <Label>¿Desde cuándo aplica?</Label>
               <Select
                 value={effective}
+                items={{
+                  next: "Desde el mes que viene",
+                  now: "Corregir este mes",
+                }}
                 onValueChange={(v) => setEffective(v as "now" | "next")}
               >
                 <SelectTrigger>

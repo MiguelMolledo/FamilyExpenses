@@ -178,6 +178,12 @@ export default function ImportarPage() {
                     />
                     <Select
                       value={row.category_id ?? ""}
+                      items={Object.fromEntries(
+                        (row.type === "expense"
+                          ? expenseCategories
+                          : incomeCategories
+                        ).map((c) => [c.id, c.name])
+                      )}
                       onValueChange={(v) =>
                         update(i, { category_id: v || null })
                       }

@@ -209,6 +209,7 @@ function IncomeDialog({
               <Label>Tipo</Label>
               <Select
                 value={type}
+                items={{ salary: "Nómina", rent: "Rentas", other: "Otro" }}
                 onValueChange={(v) => setType(v as RecurringIncome["type"])}
               >
                 <SelectTrigger>
@@ -226,6 +227,9 @@ function IncomeDialog({
             <Label>De quién</Label>
             <Select
               value={profileId}
+              items={Object.fromEntries(
+                profiles.map((p) => [p.user_id, p.display_name])
+              )}
               onValueChange={(v) => setProfileId(v ?? "")}
             >
               <SelectTrigger>
@@ -245,6 +249,10 @@ function IncomeDialog({
               <Label>¿Desde cuándo aplica?</Label>
               <Select
                 value={effective}
+                items={{
+                  next: "Desde el mes que viene",
+                  now: "Corregir este mes",
+                }}
                 onValueChange={(v) => setEffective(v as "now" | "next")}
               >
                 <SelectTrigger>

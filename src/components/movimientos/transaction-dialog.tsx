@@ -222,6 +222,9 @@ export function TransactionDialog({
             <Label>Categoría</Label>
             <Select
               value={categoryId}
+              items={Object.fromEntries(
+                shownCategories.map((c) => [c.id, c.name])
+              )}
               onValueChange={(v) => setCategoryId(v ?? "")}
             >
               <SelectTrigger>
@@ -245,6 +248,11 @@ export function TransactionDialog({
             </Label>
             <Select
               value={recurringId}
+              items={Object.fromEntries(
+                (type === "expense" ? recurringExpenses : recurringIncomes).map(
+                  (r) => [r.id, r.name]
+                )
+              )}
               onValueChange={(v) => setRecurringId(v ?? "")}
             >
               <SelectTrigger>
@@ -274,6 +282,9 @@ export function TransactionDialog({
               <Label>De quién</Label>
               <Select
                 value={profileId}
+                items={Object.fromEntries(
+                  profiles.map((p) => [p.user_id, p.display_name])
+                )}
                 onValueChange={(v) => setProfileId(v ?? "")}
               >
                 <SelectTrigger>
