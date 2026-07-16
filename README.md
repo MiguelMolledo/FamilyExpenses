@@ -1,36 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FamilyExpenses 💶
 
-## Getting Started
+App de gestión de gastos e ingresos familiares. Next.js + Supabase + Vercel.
 
-First, run the development server:
+## Qué hace
+
+- **Presupuesto con provisiones anualizadas**: los gastos fijos irregulares
+  (gas, gasoil, seguros…) se definen por su coste anual y la app reserva la
+  cuota mensual (2.000 €/año → 166,67 €/mes). Ves lo provisionado vs lo gastado
+  de verdad y la desviación acumulada del año.
+- **Movimientos**: gastos e ingresos reales del mes, extras, vínculo a fijos y
+  reparto de gastos entre mascotas.
+- **Dashboard**: disponible este mes, gráfica anual real vs previsto, desglose
+  por categoría y avisos de desviación.
+- **Hucha**: ahorro con historial (aportes, retiradas, intereses) y objetivo
+  mensual que cuenta como provisión.
+- **Cierre de mes**: congela el mes y arrastra el sobrante/déficit.
+- **Mascotas**: coste anual y media mensual por animal.
+- **Asistente IA** (botón flotante): chat con voz en español (Web Speech API)
+  y tool calls vía OpenRouter — «añade 45 euros de la farmacia», «¿cuánto
+  llevamos en comida?», «el gas sube a 80 al mes».
+- **Import PDF CaixaBank**: parser determinista local (los movimientos no
+  pasan por ninguna IA), preview editable con checks y detección de
+  duplicados, con aprendizaje de categorías.
+- **Multi-familia**: login con usuario y contraseña; cada familia aislada con
+  RLS. Únete con el código de invitación de Ajustes.
+
+## Desarrollo
 
 ```bash
+cp .env.local.example .env.local  # rellena las keys
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+La base de datos vive en Supabase, en el schema `family` (proyecto compartido
+con otras apps). Migraciones en `supabase/migrations/`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Variables de entorno
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Variable | Qué es |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL del proyecto Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role (solo server) |
+| `OPENROUTER_API_KEY` | Key de OpenRouter para el chat IA |
+| `OPENROUTER_MODEL` | Modelo del chat (por defecto `anthropic/claude-haiku-4.5`) |
