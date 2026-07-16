@@ -1,0 +1,87 @@
+import { createClient } from "@/lib/supabase/server";
+import { rulePattern } from "@/lib/caixabank";
+import { z } from "zod";
+
+const BodySchema = z.object({
+  fileName: z.string().default("extracto.pdf"),
+  rows: z
+    .array(
+      z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        description: z.string(),
+        amount: z.number().positive(),
+        type: z.enum(["expense", "income"]),
+        category_id: z.string().uuid().nullable(),
+        dedup_hash: z.string(),
+      })
+    )
+    .min(1),
+});
+
+export async function POST(req: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return new Response("No autorizado", { status: 401 });
+
+  const parsed = BodySchema.safeParse(await req.json());
+  if (!parsed.success) {
+    return Response.json({ error: "Datos no válidos" }, { status: 400 });
+  }
+  const { rows, fileName } = parsed.data;
+
+  const { data: batch, error: batchError } = await supabase
+    .from("import_batches")
+    .insert({ source: "caixabank_pdf", file_name: fileName })
+    .select("id")
+    .single();
+  if (batchError) {
+    return Response.json({ error: batchError.message }, { status: 500 });
+  }
+
+  let imported = 0;
+  const errors: string[] = [];
+  for (const row of rows) {
+    const { error } = await supabase.from("transactions").insert({
+      date: row.date,
+      description: row.description,
+      amount: row.amount,
+      type: row.type,
+      category_id: row.category_id,
+      import_batch_id: batch.id,
+      dedup_hash: row.dedup_hash,
+      is_extraordinary: false,
+    });
+    if (error) {
+      // 23505 = duplicado (dedup_hash único): lo saltamos sin romper el resto
+      if (!error.message.includes("duplicate")) errors.push(error.message);
+    } else {
+      imported++;
+    }
+  }
+
+  await supabase
+    .from("import_batches")
+    .update({ imported_count: imported })
+    .eq("id", batch.id);
+
+  // Aprendizaje: guarda regla concepto→categoría para futuros imports
+  const learned = new Map<string, string>();
+  for (const row of rows) {
+    if (!row.category_id) continue;
+    const pattern = rulePattern(row.description);
+    if (pattern.length >= 4) learned.set(pattern, row.category_id);
+  }
+  if (learned.size > 0) {
+    await supabase.from("category_rules").upsert(
+      [...learned.entries()].map(([pattern, category_id]) => ({
+        pattern,
+        category_id,
+      })),
+      { onConflict: "family_id,pattern" }
+    );
+  }
+
+  return Response.json({ imported, skipped: rows.length - imported, errors });
+}
