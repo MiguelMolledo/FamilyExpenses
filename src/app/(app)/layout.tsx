@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { BottomNav } from "@/components/bottom-nav";
+import { ChatFloat } from "@/components/chat/chat-float";
 
 export default async function AppLayout({
   children,
@@ -24,6 +25,7 @@ export default async function AppLayout({
       <main className="mx-auto w-full max-w-lg flex-1 px-4 pb-24 pt-4">
         {children}
       </main>
+      <ChatFloat />
       <BottomNav />
     </div>
   );
