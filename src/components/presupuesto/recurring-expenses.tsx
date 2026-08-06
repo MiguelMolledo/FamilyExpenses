@@ -260,46 +260,74 @@ function ExpenseDialog({
     };
 
     let error = null;
+    const done: string[] = [];
     if (!expense) {
       ({ error } = await supabase
         .from("recurring_expenses")
         .insert({ ...payload, starts_on: month }));
-    } else if (effective === "now") {
-      // Corregir la versión vigente en el propio mes
-      ({ error } = await supabase
-        .from("recurring_expenses")
-        .update(payload)
-        .eq("id", expense.id));
-    } else if (pending) {
-      // Ya hay una versión futura: se edita esa, nunca se crea otra
-      ({ error } = await supabase
-        .from("recurring_expenses")
-        .update(payload)
-        .eq("id", pending.id));
+      done.push("gasto fijo añadido");
     } else {
-      // Cambio a futuro: cerrar la versión actual y abrir una nueva
-      const nextMonth = addMonths(month, 1);
-      ({ error } = await supabase
-        .from("recurring_expenses")
-        .update({ ends_on: monthEnd(month) })
-        .eq("id", expense.id));
-      if (!error) {
+      // Nombre y categoría son la identidad del fijo: cambian al momento en
+      // TODAS sus versiones (pasadas, la vigente y la programada). Solo el
+      // importe/periodo se versiona.
+      const identityChanged =
+        payload.name !== expense.name ||
+        (payload.category_id ?? null) !== (expense.category_id ?? null);
+      const economicChanged =
+        payload.amount !== expense.amount || payload.period !== expense.period;
+
+      if (identityChanged) {
         ({ error } = await supabase
           .from("recurring_expenses")
-          .insert({ ...payload, starts_on: nextMonth, supersedes_id: expense.id }));
+          .update({ name: payload.name, category_id: payload.category_id })
+          .eq("name", expense.name));
+        done.push("nombre y categoría actualizados ya en todos los meses");
+      }
+      if (!error && economicChanged) {
+        if (effective === "now") {
+          ({ error } = await supabase
+            .from("recurring_expenses")
+            .update({ amount: payload.amount, period: payload.period })
+            .eq("id", expense.id));
+          done.push("importe corregido en este mes");
+        } else if (pending) {
+          // Ya hay una versión futura: se edita esa, nunca se crea otra
+          ({ error } = await supabase
+            .from("recurring_expenses")
+            .update({ amount: payload.amount, period: payload.period })
+            .eq("id", pending.id));
+          done.push(
+            `importe desde el 1 de ${monthLabel(pending.starts_on)} (este mes sigue igual)`
+          );
+        } else {
+          const nextMonth = addMonths(month, 1);
+          ({ error } = await supabase
+            .from("recurring_expenses")
+            .update({ ends_on: monthEnd(month) })
+            .eq("id", expense.id));
+          if (!error) {
+            ({ error } = await supabase
+              .from("recurring_expenses")
+              .insert({ ...payload, starts_on: nextMonth, supersedes_id: expense.id }));
+          }
+          done.push(
+            `importe desde el 1 de ${monthLabel(nextMonth)} (este mes sigue igual)`
+          );
+        }
       }
     }
 
     setSaving(false);
     if (error) return void toast.error("No se pudo guardar: " + error.message);
-    toast.success(
-      !expense
-        ? "Gasto fijo añadido"
-        : effective === "now"
-          ? "Corregido: aplica ya en este mes"
-          : `Guardado: se aplicará desde el 1 de ${monthLabel(addMonths(month, 1))}. Este mes sigue igual.`,
-      { duration: 6000 }
-    );
+    if (done.length === 0) {
+      toast.info("No había cambios que guardar");
+    } else {
+      const msg = done.join("; ");
+      toast.success(
+        `Guardado: ${msg.charAt(0).toUpperCase()}${msg.slice(1)}`,
+        { duration: 6000 }
+      );
+    }
     setOpen(false);
     router.refresh();
   }
@@ -432,7 +460,11 @@ function ExpenseDialog({
           )}
           {expense && (
             <div className="flex flex-col gap-2">
-              <Label>¿Desde cuándo aplica?</Label>
+              <Label>¿Desde cuándo aplica el importe?</Label>
+              <p className="text-xs text-muted-foreground">
+                El nombre y la categoría se cambian siempre al momento, en
+                todos los meses. Esto solo afecta al importe y al periodo.
+              </p>
               <Select
                 value={effective}
                 items={{
