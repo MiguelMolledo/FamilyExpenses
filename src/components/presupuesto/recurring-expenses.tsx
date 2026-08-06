@@ -186,6 +186,7 @@ function ExpenseDialog({
   // Al editar: desde cuándo aplica el cambio (versionado a futuro)
   const [effective, setEffective] = useState<"now" | "next">("next");
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   async function save() {
     if (!name.trim() || !Number(amount)) {
@@ -248,13 +249,47 @@ function ExpenseDialog({
 
   async function finish() {
     setSaving(true);
-    const { error } = await createClient()
-      .from("recurring_expenses")
-      .update({ ends_on: monthEnd(month) })
-      .eq("id", expense!.id);
+    const supabase = createClient();
+    // Finalizar también anula el cambio programado, si lo hay: un fijo
+    // finalizado no debe resucitar el mes que viene con la versión futura.
+    let error = pending
+      ? (await supabase.from("recurring_expenses").delete().eq("id", pending.id))
+          .error
+      : null;
+    if (!error) {
+      ({ error } = await supabase
+        .from("recurring_expenses")
+        .update({ ends_on: monthEnd(month) })
+        .eq("id", expense!.id));
+    }
     setSaving(false);
     if (error) return void toast.error("No se pudo finalizar");
-    toast.success("Gasto fijo finalizado: deja de provisionarse el mes que viene");
+    toast.success(
+      `Finalizado: este mes aún se provisiona, desde el 1 de ${monthLabel(
+        addMonths(month, 1)
+      )} desaparece de la lista.`,
+      { duration: 6000 }
+    );
+    setOpen(false);
+    router.refresh();
+  }
+
+  async function remove() {
+    setSaving(true);
+    const supabase = createClient();
+    let error = pending
+      ? (await supabase.from("recurring_expenses").delete().eq("id", pending.id))
+          .error
+      : null;
+    if (!error) {
+      ({ error } = await supabase
+        .from("recurring_expenses")
+        .delete()
+        .eq("id", expense!.id));
+    }
+    setSaving(false);
+    if (error) return void toast.error("No se pudo eliminar: " + error.message);
+    toast.success("Gasto fijo eliminado");
     setOpen(false);
     router.refresh();
   }
@@ -367,9 +402,33 @@ function ExpenseDialog({
             {saving ? "Guardando..." : "Guardar"}
           </Button>
           {expense && (
-            <Button variant="outline" onClick={finish} disabled={saving}>
-              Finalizar este gasto fijo
-            </Button>
+            <>
+              <Button variant="outline" onClick={finish} disabled={saving}>
+                Finalizar (deja de provisionarse el mes que viene)
+              </Button>
+              {!confirmDelete ? (
+                <Button
+                  variant="ghost"
+                  className="text-destructive"
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={saving}
+                >
+                  Eliminar del todo…
+                </Button>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    Solo para fijos creados por error: se borra también de los
+                    meses pasados y sus movimientos vinculados pasan a contar
+                    como gasto extra. Si el fijo era real y simplemente se
+                    acaba, usa «Finalizar».
+                  </p>
+                  <Button variant="destructive" onClick={remove} disabled={saving}>
+                    Sí, eliminar definitivamente
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </DialogContent>
