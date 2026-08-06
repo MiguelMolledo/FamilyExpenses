@@ -45,7 +45,7 @@ export default function ImportarPage() {
     form.append("file", file);
     const res = await fetch("/api/import/parse", { method: "POST", body: form });
     setParsing(false);
-    if (!res.ok) return void toast.error("No se pudo procesar el PDF");
+    if (!res.ok) return void toast.error("No se pudo procesar el archivo");
     const data = await res.json();
     if (data.warning) toast.warning(data.warning);
     setRows(data.rows ?? []);
@@ -103,14 +103,16 @@ export default function ImportarPage() {
               <FileUp className="size-8 text-muted-foreground" />
             )}
             <span className="text-sm font-medium">
-              {parsing ? "Analizando PDF…" : "Sube el PDF de CaixaBank"}
+              {parsing
+                ? "Analizando extracto…"
+                : "Sube el PDF o Excel de CaixaBank"}
             </span>
             <span className="text-xs text-muted-foreground">
               Se procesa en tu servidor. Los movimientos no pasan por ninguna IA.
             </span>
             <input
               type="file"
-              accept="application/pdf"
+              accept="application/pdf,.xls,.xlsx"
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];

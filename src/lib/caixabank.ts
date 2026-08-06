@@ -1,5 +1,5 @@
 /**
- * Parser determinista de extractos de CaixaBank en PDF.
+ * Parsers deterministas de extractos de CaixaBank (PDF y Excel).
  * Los movimientos nunca salen del servidor: nada de IA aquí.
  *
  * Formato típico de línea (tras extraer el texto del PDF):
@@ -64,6 +64,69 @@ export function parseCaixabankText(text: string): ParsedMovement[] {
   }
 
   return movements;
+}
+
+/**
+ * Parser del export Excel "Movimientos de la cuenta" de CaixaBank (.xls).
+ * Cabecera esperada: Fecha | Fecha valor | Movimiento | Más datos | Importe.
+ * Fechas como serial de Excel, importes numéricos con signo.
+ */
+export function parseCaixabankSheet(rows: unknown[][]): ParsedMovement[] {
+  const norm = (s: unknown) =>
+    String(s ?? "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .trim();
+
+  const headerIdx = rows.findIndex(
+    (r) => r.some((c) => norm(c) === "fecha") && r.some((c) => norm(c) === "importe")
+  );
+  if (headerIdx === -1) return [];
+
+  const header = rows[headerIdx].map(norm);
+  const col = {
+    date: header.indexOf("fecha"),
+    description: header.indexOf("movimiento"),
+    extra: header.indexOf("mas datos"),
+    amount: header.indexOf("importe"),
+  };
+  if (col.description === -1 || col.amount === -1) return [];
+
+  const movements: ParsedMovement[] = [];
+  for (const row of rows.slice(headerIdx + 1)) {
+    const value = row[col.amount];
+    const description = String(row[col.description] ?? "").replace(/\s+/g, " ").trim();
+    if (typeof value !== "number" || !value || !description) continue;
+
+    // "Más datos" suele traer la fecha real de la compra en pagos con tarjeta:
+    // "Fecha de operación: dd-mm-yyyy". Si está, manda sobre la fecha contable.
+    const extra = String(row[col.extra] ?? "");
+    const opDate = extra.match(/operaci[oó]n:?\s*(\d{2})-(\d{2})-(\d{4})/i);
+    const date = opDate
+      ? toIsoDate(opDate[1], opDate[2], opDate[3])
+      : excelDateToIso(row[col.date]);
+    if (!date) continue;
+
+    movements.push({
+      date,
+      description,
+      amount: Math.abs(value),
+      type: value < 0 ? "expense" : "income",
+    });
+  }
+  return movements;
+}
+
+/** Serial de fecha de Excel (o texto dd/mm/yyyy) → ISO, null si no lo es. */
+function excelDateToIso(cell: unknown): string | null {
+  if (typeof cell === "number" && cell > 25569 && cell < 80000) {
+    return new Date(Date.UTC(1899, 11, 30) + cell * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+  }
+  const m = String(cell ?? "").match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/);
+  return m ? toIsoDate(m[1], m[2], m[3]) : null;
 }
 
 /** Clave de deduplicación estable: fecha + importe + concepto normalizado. */

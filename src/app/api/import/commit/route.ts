@@ -31,9 +31,10 @@ export async function POST(req: Request) {
   }
   const { rows, fileName } = parsed.data;
 
+  const source = /\.xlsx?$/i.test(fileName) ? "caixabank_xls" : "caixabank_pdf";
   const { data: batch, error: batchError } = await supabase
     .from("import_batches")
-    .insert({ source: "caixabank_pdf", file_name: fileName })
+    .insert({ source, file_name: fileName })
     .select("id")
     .single();
   if (batchError) {
