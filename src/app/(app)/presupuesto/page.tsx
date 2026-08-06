@@ -15,14 +15,27 @@ import { Card, CardContent } from "@/components/ui/card";
 export default async function PresupuestoPage() {
   const supabase = await createClient();
   const month = monthStart(new Date());
-  const [budget, suggestions, deviations, categoriesQ, profilesQ] =
+  const [budget, suggestions, deviations, categoriesQ, profilesQ, upcomingQ] =
     await Promise.all([
       getMonthBudget(supabase, month),
       getSuggestions(supabase, month),
       getYearDeviations(supabase, month),
       supabase.from("categories").select("*").eq("kind", "expense").order("name"),
       supabase.from("profiles").select("*"),
+      supabase
+        .from("recurring_expenses")
+        .select("id, name, amount, period, starts_on, supersedes_id")
+        .gt("starts_on", month)
+        .not("supersedes_id", "is", null),
     ]);
+
+  // Versión futura pendiente de cada fijo, indexada por el fijo al que sustituye
+  const upcoming = Object.fromEntries(
+    (upcomingQ.data ?? []).map((u) => [
+      u.supersedes_id as string,
+      { ...u, amount: Number(u.amount) },
+    ])
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -56,6 +69,7 @@ export default async function PresupuestoPage() {
       <RecurringExpenses
         expenses={budget.recurringExpenses}
         categories={categoriesQ.data ?? []}
+        upcoming={upcoming}
         month={month}
       />
 

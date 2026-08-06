@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Pencil } from "lucide-react";
+import { Plus, Pencil, TriangleAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { addMonths, monthEnd } from "@/lib/budget";
 import { eur, type Category, type RecurringExpense } from "@/lib/types";
@@ -34,13 +34,31 @@ import {
 
 type ExpenseRow = RecurringExpense & { provision: number; realSpent: number };
 
+/** Versión futura pendiente de un fijo (cambio programado). */
+type Upcoming = {
+  id: string;
+  name: string;
+  amount: number;
+  period: "monthly" | "annual";
+  starts_on: string;
+};
+
+function monthLabel(isoDate: string): string {
+  const [y, m] = isoDate.split("-").map(Number);
+  return new Intl.DateTimeFormat("es-ES", { month: "long" }).format(
+    new Date(Date.UTC(y, m - 1, 1))
+  );
+}
+
 export function RecurringExpenses({
   expenses,
   categories,
+  upcoming = {},
   month,
 }: {
   expenses: ExpenseRow[];
   categories: Category[];
+  upcoming?: Record<string, Upcoming>;
   month: string;
 }) {
   const total = expenses.reduce((s, e) => s + e.provision, 0);
@@ -72,7 +90,10 @@ export function RecurringExpenses({
         {expenses.map((e) => (
           <div key={e.id} className="flex items-center gap-2 py-2.5">
             <div className="flex-1 min-w-0">
-              <p className="truncate font-medium">{e.name}</p>
+              <p className="flex items-center gap-1.5 truncate font-medium">
+                {e.name}
+                {upcoming[e.id] && <UpcomingBadge change={upcoming[e.id]} />}
+              </p>
               <p className="text-xs text-muted-foreground">
                 {e.period === "annual"
                   ? `${eur(e.amount)}/año → ${eur(e.provision)}/mes`
@@ -81,7 +102,12 @@ export function RecurringExpenses({
               </p>
             </div>
             <span className="font-semibold">{eur(e.provision)}</span>
-            <ExpenseDialog categories={categories} month={month} expense={e}>
+            <ExpenseDialog
+              categories={categories}
+              month={month}
+              expense={e}
+              pending={upcoming[e.id]}
+            >
               <Button size="icon" variant="ghost">
                 <Pencil className="size-4" />
               </Button>
@@ -93,23 +119,68 @@ export function RecurringExpenses({
   );
 }
 
+/** Aviso de cambio programado: toque/click abre el detalle. */
+function UpcomingBadge({ change }: { change: Upcoming }) {
+  const label = monthLabel(change.starts_on);
+  return (
+    <Dialog>
+      <DialogTrigger
+        render={
+          <button
+            type="button"
+            className="shrink-0 text-amber-500"
+            title={`Cambio programado desde ${label}`}
+            aria-label="Ver cambio programado"
+          >
+            <TriangleAlert className="size-4" />
+          </button>
+        }
+      />
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Cambio programado</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm">
+          Desde el 1 de {label} este fijo pasa a ser:
+        </p>
+        <p className="font-medium">
+          {change.name} ·{" "}
+          {change.period === "annual"
+            ? `${eur(change.amount)}/año (${eur(change.amount / 12)}/mes)`
+            : `${eur(change.amount)}/mes`}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Hasta entonces sigue aplicando la versión actual. Para cambiarlo ya,
+          edita el fijo y elige «Corregir este mes».
+        </p>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ExpenseDialog({
   categories,
   month,
   expense,
+  pending,
   children,
 }: {
   categories: Category[];
   month: string;
   expense?: ExpenseRow;
+  pending?: Upcoming;
   children: React.ReactNode;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState(expense?.name ?? "");
-  const [amount, setAmount] = useState(expense ? String(expense.amount) : "");
+  // Si hay un cambio programado, el diálogo parte de él: es el estado que
+  // el usuario quiere que acabe aplicando.
+  const [name, setName] = useState(pending?.name ?? expense?.name ?? "");
+  const [amount, setAmount] = useState(
+    pending ? String(pending.amount) : expense ? String(expense.amount) : ""
+  );
   const [period, setPeriod] = useState<"monthly" | "annual">(
-    expense?.period ?? "monthly"
+    pending?.period ?? expense?.period ?? "monthly"
   );
   const [categoryId, setCategoryId] = useState(expense?.category_id ?? "");
   // Al editar: desde cuándo aplica el cambio (versionado a futuro)
@@ -141,6 +212,12 @@ function ExpenseDialog({
         .from("recurring_expenses")
         .update(payload)
         .eq("id", expense.id));
+    } else if (pending) {
+      // Ya hay una versión futura: se edita esa, nunca se crea otra
+      ({ error } = await supabase
+        .from("recurring_expenses")
+        .update(payload)
+        .eq("id", pending.id));
     } else {
       // Cambio a futuro: cerrar la versión actual y abrir una nueva
       const nextMonth = addMonths(month, 1);
@@ -151,13 +228,20 @@ function ExpenseDialog({
       if (!error) {
         ({ error } = await supabase
           .from("recurring_expenses")
-          .insert({ ...payload, starts_on: nextMonth }));
+          .insert({ ...payload, starts_on: nextMonth, supersedes_id: expense.id }));
       }
     }
 
     setSaving(false);
     if (error) return void toast.error("No se pudo guardar: " + error.message);
-    toast.success(expense ? "Gasto fijo actualizado" : "Gasto fijo añadido");
+    toast.success(
+      !expense
+        ? "Gasto fijo añadido"
+        : effective === "now"
+          ? "Corregido: aplica ya en este mes"
+          : `Guardado: se aplicará desde el 1 de ${monthLabel(addMonths(month, 1))}. Este mes sigue igual.`,
+      { duration: 6000 }
+    );
     setOpen(false);
     router.refresh();
   }
@@ -245,6 +329,15 @@ function ExpenseDialog({
               </SelectContent>
             </Select>
           </div>
+          {expense && pending && (
+            <p className="rounded-md bg-amber-500/10 p-2 text-xs text-amber-600 dark:text-amber-400">
+              Ya hay un cambio programado desde el 1 de{" "}
+              {monthLabel(pending.starts_on)} ({pending.name},{" "}
+              {eur(pending.amount)}
+              {pending.period === "annual" ? "/año" : "/mes"}). Guardar «desde
+              el mes que viene» lo reemplaza; no se crea otro.
+            </p>
+          )}
           {expense && (
             <div className="flex flex-col gap-2">
               <Label>¿Desde cuándo aplica?</Label>
