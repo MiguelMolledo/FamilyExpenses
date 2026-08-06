@@ -58,25 +58,47 @@ export async function POST(req: Request) {
     seen.set(base, n);
     return n === 1 ? base : `${base}#${n}`;
   });
-  const [rulesQ, dupQ, categoriesQ] = await Promise.all([
+  const today = new Date().toISOString().slice(0, 10);
+  const [rulesQ, recurringRulesQ, dupQ, categoriesQ, fijosQ] = await Promise.all([
     supabase.from("category_rules").select("pattern, category_id"),
+    supabase.from("recurring_rules").select("pattern, recurring_expense_id"),
     supabase.from("transactions").select("dedup_hash").in("dedup_hash", hashes),
     supabase.from("categories").select("id, name, kind"),
+    supabase
+      .from("recurring_expenses")
+      .select("id, name, category_id")
+      .lte("starts_on", today)
+      .or(`ends_on.is.null,ends_on.gte.${today}`)
+      .order("name"),
   ]);
 
-  const rules = (rulesQ.data ?? []).sort(
-    (a, b) => b.pattern.length - a.pattern.length
-  );
+  const byLength = (a: { pattern: string }, b: { pattern: string }) =>
+    b.pattern.length - a.pattern.length;
+  const rules = (rulesQ.data ?? []).sort(byLength);
+  const recurringRules = (recurringRulesQ.data ?? []).sort(byLength);
+  const fijos = fijosQ.data ?? [];
+  const fijoIds = new Set(fijos.map((f) => f.id));
   const existing = new Set((dupQ.data ?? []).map((d) => d.dedup_hash));
 
   const rows = movements.map((m, i) => {
     const normDesc = m.description.toLowerCase();
     const rule = rules.find((r) => normDesc.includes(r.pattern));
+    // Fijo sugerido por regla aprendida; solo si sigue vigente
+    const fijoRule =
+      m.type === "expense"
+        ? recurringRules.find(
+            (r) =>
+              normDesc.includes(r.pattern) && fijoIds.has(r.recurring_expense_id)
+          )
+        : undefined;
+    const fijo = fijos.find((f) => f.id === fijoRule?.recurring_expense_id);
     const duplicate = existing.has(hashes[i]);
     return {
       ...m,
       dedup_hash: hashes[i],
-      category_id: rule?.category_id ?? null,
+      // Si el fijo tiene categoría propia, esa manda sobre la regla genérica
+      category_id: fijo?.category_id ?? rule?.category_id ?? null,
+      recurring_expense_id: fijo?.id ?? null,
       duplicate,
       checked: !duplicate,
     };
@@ -85,6 +107,7 @@ export async function POST(req: Request) {
   return Response.json({
     rows,
     categories: categoriesQ.data ?? [],
+    fijos: fijos.map((f) => ({ id: f.id, name: f.name })),
     fileName: file.name,
   });
 }

@@ -25,15 +25,19 @@ type Row = {
   amount: number;
   type: "expense" | "income";
   category_id: string | null;
+  recurring_expense_id: string | null;
   dedup_hash: string;
   duplicate: boolean;
   checked: boolean;
 };
 
+type Fijo = { id: string; name: string };
+
 export default function ImportarPage() {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [fijos, setFijos] = useState<Fijo[]>([]);
   const [fileName, setFileName] = useState("");
   const [parsing, setParsing] = useState(false);
   const [committing, setCommitting] = useState(false);
@@ -50,6 +54,7 @@ export default function ImportarPage() {
     if (data.warning) toast.warning(data.warning);
     setRows(data.rows ?? []);
     setCategories(data.categories ?? []);
+    setFijos(data.fijos ?? []);
     setFileName(data.fileName ?? file.name);
   }
 
@@ -72,6 +77,7 @@ export default function ImportarPage() {
           amount: r.amount,
           type: r.type,
           category_id: r.category_id,
+          recurring_expense_id: r.recurring_expense_id,
           dedup_hash: r.dedup_hash,
         })),
       }),
@@ -213,6 +219,30 @@ export default function ImportarPage() {
                       </Badge>
                     )}
                   </div>
+                  {row.type === "expense" && fijos.length > 0 && (
+                    <div className="flex items-center gap-2 pl-7">
+                      <Select
+                        value={row.recurring_expense_id ?? ""}
+                        items={Object.fromEntries(
+                          fijos.map((f) => [f.id, f.name])
+                        )}
+                        onValueChange={(v) =>
+                          update(i, { recurring_expense_id: v || null })
+                        }
+                      >
+                        <SelectTrigger className="h-8 flex-1 text-xs">
+                          <SelectValue placeholder="Sin gasto fijo (cuenta como extra)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {fijos.map((f) => (
+                            <SelectItem key={f.id} value={f.id}>
+                              {f.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))}
