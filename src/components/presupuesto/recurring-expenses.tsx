@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { FilterBar, fold } from "@/components/filter-bar";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Pencil, TriangleAlert } from "lucide-react";
@@ -62,6 +63,36 @@ export function RecurringExpenses({
   month: string;
 }) {
   const total = expenses.reduce((s, e) => s + e.provision, 0);
+  const [query, setQuery] = useState("");
+  const [catFilter, setCatFilter] = useState("");
+
+  // Filtro + agrupación alfabética por categoría; fijos por nombre dentro
+  const groups = useMemo(() => {
+    const catById = new Map(categories.map((c) => [c.id, c.name]));
+    const q = fold(query.trim());
+    const visible = expenses.filter((e) => {
+      if (catFilter === "none" && e.category_id) return false;
+      if (catFilter && catFilter !== "none" && e.category_id !== catFilter)
+        return false;
+      if (!q) return true;
+      const catName = catById.get(e.category_id ?? "") ?? "";
+      return fold(`${e.name} ${catName}`).includes(q);
+    });
+    const byCat = new Map<string, ExpenseRow[]>();
+    for (const e of visible) {
+      const name = catById.get(e.category_id ?? "") ?? "Sin categoría";
+      byCat.set(name, [...(byCat.get(name) ?? []), e]);
+    }
+    return [...byCat.entries()]
+      .sort(([a], [b]) =>
+        a === "Sin categoría" ? 1 : b === "Sin categoría" ? -1 : a.localeCompare(b, "es")
+      )
+      .map(([name, items]) => ({
+        name,
+        items: items.sort((a, b) => a.name.localeCompare(b.name, "es")),
+        subtotal: items.reduce((s, e) => s + e.provision, 0),
+      }));
+  }, [expenses, query, catFilter, categories]);
 
   return (
     <Card>
@@ -81,37 +112,63 @@ export function RecurringExpenses({
           </ExpenseDialog>
         </div>
       </CardHeader>
-      <CardContent className="flex flex-col divide-y">
-        {expenses.length === 0 && (
+      <CardContent className="flex flex-col gap-2">
+        {expenses.length === 0 ? (
           <p className="py-2 text-sm text-muted-foreground">
             Aún no hay gastos fijos. Añade el primero (alquiler, luz, gas…).
           </p>
+        ) : (
+          <FilterBar
+            query={query}
+            onQuery={setQuery}
+            categoryId={catFilter}
+            onCategory={setCatFilter}
+            categories={categories}
+          />
         )}
-        {expenses.map((e) => (
-          <div key={e.id} className="flex items-center gap-2 py-2.5">
-            <div className="flex-1 min-w-0">
-              <p className="flex items-center gap-1.5 truncate font-medium">
-                {e.name}
-                {upcoming[e.id] && <UpcomingBadge change={upcoming[e.id]} />}
+        {expenses.length > 0 && groups.length === 0 && (
+          <p className="py-2 text-sm text-muted-foreground">
+            Nada coincide con el filtro.
+          </p>
+        )}
+        {groups.map((g) => (
+          <div key={g.name} className="flex flex-col divide-y">
+            <div className="flex items-center justify-between py-1.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {g.name}
               </p>
-              <p className="text-xs text-muted-foreground">
-                {e.period === "annual"
-                  ? `${eur(e.amount)}/año → ${eur(e.provision)}/mes`
-                  : `${eur(e.amount)}/mes`}
-                {e.realSpent > 0 && ` · gastado este mes: ${eur(e.realSpent)}`}
-              </p>
+              <span className="text-xs font-medium text-muted-foreground">
+                {eur(g.subtotal)}/mes
+              </span>
             </div>
-            <span className="font-semibold">{eur(e.provision)}</span>
-            <ExpenseDialog
-              categories={categories}
-              month={month}
-              expense={e}
-              pending={upcoming[e.id]}
-            >
-              <Button size="icon" variant="ghost">
-                <Pencil className="size-4" />
-              </Button>
-            </ExpenseDialog>
+            {g.items.map((e) => (
+              <div key={e.id} className="flex items-center gap-2 py-2.5">
+                <div className="flex-1 min-w-0">
+                  <p className="flex items-center gap-1.5 truncate font-medium">
+                    {e.name}
+                    {upcoming[e.id] && <UpcomingBadge change={upcoming[e.id]} />}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {e.period === "annual"
+                      ? `${eur(e.amount)}/año → ${eur(e.provision)}/mes`
+                      : `${eur(e.amount)}/mes`}
+                    {e.realSpent > 0 &&
+                      ` · gastado este mes: ${eur(e.realSpent)}`}
+                  </p>
+                </div>
+                <span className="font-semibold">{eur(e.provision)}</span>
+                <ExpenseDialog
+                  categories={categories}
+                  month={month}
+                  expense={e}
+                  pending={upcoming[e.id]}
+                >
+                  <Button size="icon" variant="ghost">
+                    <Pencil className="size-4" />
+                  </Button>
+                </ExpenseDialog>
+              </div>
+            ))}
           </div>
         ))}
       </CardContent>

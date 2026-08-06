@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { FileUp, Loader2 } from "lucide-react";
+import { FileUp, Loader2, Sparkles } from "lucide-react";
 import { eur, type Category } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,6 +29,7 @@ type Row = {
   dedup_hash: string;
   duplicate: boolean;
   checked: boolean;
+  ai?: boolean;
 };
 
 type Fijo = { id: string; name: string };
@@ -114,7 +115,9 @@ export default function ImportarPage() {
                 : "Sube el PDF o Excel de CaixaBank"}
             </span>
             <span className="text-xs text-muted-foreground">
-              Se procesa en tu servidor. Los movimientos no pasan por ninguna IA.
+              Se procesa en tu servidor. Solo los conceptos sin regla aprendida
+              se envían a la IA para sugerir categoría y gasto fijo (nunca
+              importes ni fechas).
             </span>
             <input
               type="file"
@@ -217,6 +220,12 @@ export default function ImportarPage() {
                       >
                         posible duplicado
                       </Badge>
+                    )}
+                    {row.ai && (
+                      <Sparkles
+                        className="size-3.5 shrink-0 text-amber-500"
+                        aria-label="Sugerido por IA"
+                      />
                     )}
                   </div>
                   {row.type === "expense" && fijos.length > 0 && (

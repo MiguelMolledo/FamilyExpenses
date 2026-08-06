@@ -1,11 +1,24 @@
 import { extractText, getDocumentProxy } from "unpdf";
 import * as XLSX from "xlsx";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { generateObject } from "ai";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import {
   parseCaixabankText,
   parseCaixabankSheet,
   dedupHash,
 } from "@/lib/caixabank";
+
+const SuggestionSchema = z.object({
+  items: z.array(
+    z.object({
+      description: z.string(),
+      category: z.string().nullable(),
+      fijo: z.string().nullable(),
+    })
+  ),
+});
 
 export const maxDuration = 60;
 
@@ -101,8 +114,80 @@ export async function POST(req: Request) {
       recurring_expense_id: fijo?.id ?? null,
       duplicate,
       checked: !duplicate,
+      ai: false,
     };
   });
+
+  // Segunda pasada, con IA: solo los conceptos que las reglas aprendidas no
+  // conocen. Las reglas siempre mandan; la IA solo rellena huecos, y lo que
+  // el usuario confirme al importar se convierte en regla (la IA se usa cada
+  // vez menos). Si el modelo falla, el import sigue sin sugerencias.
+  const categories = categoriesQ.data ?? [];
+  const pending = [
+    ...new Map(
+      rows
+        .filter(
+          (r) =>
+            !r.category_id || (r.type === "expense" && !r.recurring_expense_id)
+        )
+        .map((r) => [r.description, { description: r.description, type: r.type }])
+    ).values(),
+  ];
+  if (pending.length > 0 && process.env.OPENROUTER_API_KEY) {
+    try {
+      const openrouter = createOpenRouter({
+        apiKey: process.env.OPENROUTER_API_KEY,
+      });
+      const { object } = await generateObject({
+        model: openrouter(process.env.OPENROUTER_MODEL ?? "openai/gpt-5.6-luna"),
+        schema: SuggestionSchema,
+        abortSignal: AbortSignal.timeout(30_000),
+        prompt: [
+          "Eres el clasificador de un app familiar de gastos en España.",
+          "Para cada concepto bancario, sugiere la categoría y, si claramente corresponde a un recibo recurrente de la lista de gastos fijos, el gasto fijo. Usa null si no hay un candidato claro; no inventes nombres fuera de las listas.",
+          `Categorías de gasto: ${categories
+            .filter((c) => c.kind === "expense")
+            .map((c) => c.name)
+            .join(", ")}`,
+          `Categorías de ingreso: ${categories
+            .filter((c) => c.kind === "income")
+            .map((c) => c.name)
+            .join(", ")}`,
+          `Gastos fijos: ${fijos.map((f) => f.name).join(", ")}`,
+          `Conceptos a clasificar (tipo entre paréntesis): ${pending
+            .map((p) => `"${p.description}" (${p.type})`)
+            .join("; ")}`,
+        ].join("\n\n"),
+      });
+      const catByName = new Map(
+        categories.map((c) => [c.name.toLowerCase(), c])
+      );
+      const fijoByName = new Map(fijos.map((f) => [f.name.toLowerCase(), f]));
+      const byDesc = new Map(
+        object.items.map((s) => [s.description.toLowerCase(), s])
+      );
+      for (const row of rows) {
+        const s = byDesc.get(row.description.toLowerCase());
+        if (!s) continue;
+        const cat = s.category ? catByName.get(s.category.toLowerCase()) : null;
+        const fijoMatch =
+          row.type === "expense" && s.fijo
+            ? fijoByName.get(s.fijo.toLowerCase())
+            : null;
+        if (!row.recurring_expense_id && fijoMatch) {
+          row.recurring_expense_id = fijoMatch.id;
+          row.category_id = fijoMatch.category_id ?? row.category_id;
+          row.ai = true;
+        }
+        if (!row.category_id && cat && cat.kind === row.type) {
+          row.category_id = cat.id;
+          row.ai = true;
+        }
+      }
+    } catch {
+      // Sin sugerencias de IA: no bloquea el import
+    }
+  }
 
   return Response.json({
     rows,
