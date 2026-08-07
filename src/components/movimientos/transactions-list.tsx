@@ -11,8 +11,8 @@ import {
   type Category,
   type Pet,
   type Profile,
-  type RecurringExpense,
   type RecurringIncome,
+  type Subcategory,
   type Transaction,
 } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 export function TransactionsList({
   transactions,
   categories,
-  recurringExpenses,
+  subcategories,
   recurringIncomes,
   pets,
   profiles,
@@ -32,7 +32,7 @@ export function TransactionsList({
 }: {
   transactions: Transaction[];
   categories: Category[];
-  recurringExpenses: RecurringExpense[];
+  subcategories: Subcategory[];
   recurringIncomes: RecurringIncome[];
   pets: Pet[];
   profiles: Profile[];
@@ -41,6 +41,7 @@ export function TransactionsList({
 }) {
   const router = useRouter();
   const catById = new Map(categories.map((c) => [c.id, c.name]));
+  const subById = new Map(subcategories.map((s) => [s.id, s.name]));
   const splitSet = new Set(splitIds);
   const [query, setQuery] = useState("");
   const [catFilter, setCatFilter] = useState("");
@@ -135,7 +136,7 @@ export function TransactionsList({
             <TransactionDialog
               month={month}
               categories={categories}
-              recurringExpenses={recurringExpenses}
+              subcategories={subcategories}
               recurringIncomes={recurringIncomes}
               pets={pets}
               profiles={profiles}
@@ -149,7 +150,7 @@ export function TransactionsList({
                   {splitSet.has(t.id) && (
                     <PawPrint className="size-3.5 shrink-0 text-muted-foreground" />
                   )}
-                  {(t.recurring_expense_id || t.recurring_income_id) && (
+                  {(t.is_fixed || t.recurring_income_id) && (
                     <Repeat className="size-3.5 shrink-0 text-muted-foreground" />
                   )}
                   {t.is_extraordinary && (
@@ -163,6 +164,9 @@ export function TransactionsList({
                   })}
                   {t.category_id && catById.get(t.category_id)
                     ? ` · ${catById.get(t.category_id)}`
+                    : ""}
+                  {t.subcategory_id && subById.get(t.subcategory_id)
+                    ? ` › ${subById.get(t.subcategory_id)}`
                     : ""}
                 </p>
               </button>

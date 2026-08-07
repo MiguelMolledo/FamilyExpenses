@@ -16,7 +16,24 @@ export type Category = {
   family_id: string;
   name: string;
   icon: string | null;
+  /** null = contenedor neutro (modelo nuevo): el kind vive en la subcategoría */
+  kind: "expense" | "income" | null;
+  monthly_budget: number | null;
+  /** sobrante al cerrar mes: acumula en la categoría o se barre a ahorro */
+  rollover: "accumulate" | "to_savings";
+  /** recortable: cuenta para la capacidad de reacción */
+  is_flexible: boolean;
+  /** Traspaso: fuera de las estadísticas de gasto */
+  exclude_from_stats: boolean;
+};
+
+export type Subcategory = {
+  id: string;
+  family_id: string;
+  category_id: string;
+  name: string;
   kind: "expense" | "income";
+  monthly_budget: number | null;
 };
 
 export type Pet = {
@@ -30,6 +47,7 @@ export type RecurringExpense = {
   id: string;
   family_id: string;
   category_id: string | null;
+  subcategory_id: string | null;
   name: string;
   amount: number;
   period: "monthly" | "annual";
@@ -55,10 +73,13 @@ export type Transaction = {
   amount: number;
   type: "expense" | "income";
   category_id: string | null;
+  subcategory_id: string | null;
   description: string;
   recurring_expense_id: string | null;
   recurring_income_id: string | null;
   profile_id: string | null;
+  /** recibo previsto (fijo): para el seguimiento de fijos, no cambia el presupuesto */
+  is_fixed: boolean;
   is_extraordinary: boolean;
   import_batch_id: string | null;
   dedup_hash: string | null;
@@ -104,6 +125,7 @@ export type CategoryRule = {
   family_id: string;
   pattern: string;
   category_id: string;
+  subcategory_id: string | null;
 };
 
 /** Formatea un importe en EUR es-ES */

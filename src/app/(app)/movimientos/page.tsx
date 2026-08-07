@@ -19,17 +19,19 @@ export default async function MovimientosPage({
     : monthStart(new Date());
 
   const supabase = await createClient();
-  const [budget, categoriesQ, petsQ, profilesQ, splitsQ] = await Promise.all([
-    getMonthBudget(supabase, month),
-    supabase.from("categories").select("*").order("name"),
-    supabase.from("pets").select("*").order("created_at"),
-    supabase.from("profiles").select("*"),
-    supabase
-      .from("transaction_pet_splits")
-      .select("*, transactions!inner(date)")
-      .gte("transactions.date", month)
-      .lte("transactions.date", monthEnd(month)),
-  ]);
+  const [budget, categoriesQ, subcategoriesQ, petsQ, profilesQ, splitsQ] =
+    await Promise.all([
+      getMonthBudget(supabase, month),
+      supabase.from("categories").select("*").order("name"),
+      supabase.from("subcategories").select("*").order("name"),
+      supabase.from("pets").select("*").order("created_at"),
+      supabase.from("profiles").select("*"),
+      supabase
+        .from("transaction_pet_splits")
+        .select("*, transactions!inner(date)")
+        .gte("transactions.date", month)
+        .lte("transactions.date", monthEnd(month)),
+    ]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -38,7 +40,7 @@ export default async function MovimientosPage({
         <TransactionDialog
           month={month}
           categories={categoriesQ.data ?? []}
-          recurringExpenses={budget.recurringExpenses}
+          subcategories={subcategoriesQ.data ?? []}
           recurringIncomes={budget.recurringIncomes}
           pets={petsQ.data ?? []}
           profiles={profilesQ.data ?? []}
@@ -76,7 +78,7 @@ export default async function MovimientosPage({
       <TransactionsList
         transactions={budget.transactions}
         categories={categoriesQ.data ?? []}
-        recurringExpenses={budget.recurringExpenses}
+        subcategories={subcategoriesQ.data ?? []}
         recurringIncomes={budget.recurringIncomes}
         pets={petsQ.data ?? []}
         profiles={profilesQ.data ?? []}

@@ -9,10 +9,11 @@ import {
   type Category,
   type Pet,
   type Profile,
-  type RecurringExpense,
   type RecurringIncome,
+  type Subcategory,
   type Transaction,
 } from "@/lib/types";
+import { CategorySubcategorySelect } from "@/components/category-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,7 +37,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export function TransactionDialog({
   month,
   categories,
-  recurringExpenses,
+  subcategories,
   recurringIncomes,
   pets,
   profiles,
@@ -45,7 +46,7 @@ export function TransactionDialog({
 }: {
   month: string;
   categories: Category[];
-  recurringExpenses: RecurringExpense[];
+  subcategories: Subcategory[];
   recurringIncomes: RecurringIncome[];
   pets: Pet[];
   profiles: Profile[];
@@ -68,8 +69,12 @@ export function TransactionDialog({
     transaction?.description ?? ""
   );
   const [categoryId, setCategoryId] = useState(transaction?.category_id ?? "");
+  const [subcategoryId, setSubcategoryId] = useState(
+    transaction?.subcategory_id ?? ""
+  );
+  const [isFixed, setIsFixed] = useState(transaction?.is_fixed ?? false);
   const [recurringId, setRecurringId] = useState(
-    transaction?.recurring_expense_id ?? transaction?.recurring_income_id ?? ""
+    transaction?.recurring_income_id ?? ""
   );
   const [profileId, setProfileId] = useState(transaction?.profile_id ?? "");
   const [petSplit, setPetSplit] = useState(false);
@@ -103,7 +108,9 @@ export function TransactionDialog({
       type,
       description: description.trim(),
       category_id: categoryId || null,
-      recurring_expense_id: type === "expense" ? recurringId || null : null,
+      subcategory_id: subcategoryId || null,
+      is_fixed: type === "expense" && isFixed,
+      recurring_expense_id: null,
       recurring_income_id: type === "income" ? recurringId || null : null,
       profile_id: profileId || null,
       is_extraordinary: type === "income" && !recurringId,
@@ -155,9 +162,6 @@ export function TransactionDialog({
     router.refresh();
   }
 
-  const expenseCategories = categories.filter((c) => c.kind === "expense");
-  const incomeCategories = categories.filter((c) => c.kind === "income");
-  const shownCategories = type === "expense" ? expenseCategories : incomeCategories;
   const petTotal = pets.reduce((s, p) => s + (Number(petAmounts[p.id]) || 0), 0);
 
   return (
@@ -175,6 +179,8 @@ export function TransactionDialog({
             onValueChange={(v) => {
               setType(v as "expense" | "income");
               setCategoryId("");
+              setSubcategoryId("");
+              setIsFixed(false);
               setRecurringId("");
             }}
           >
@@ -219,63 +225,64 @@ export function TransactionDialog({
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label>Categoría</Label>
-            <Select
-              value={categoryId}
-              items={Object.fromEntries(
-                shownCategories.map((c) => [c.id, c.name])
-              )}
-              onValueChange={(v) => setCategoryId(v ?? "")}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Sin categoría" />
-              </SelectTrigger>
-              <SelectContent>
-                {shownCategories.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Categoría y subcategoría</Label>
+            <CategorySubcategorySelect
+              categories={categories}
+              subcategories={subcategories}
+              kind={type}
+              categoryId={categoryId || null}
+              subcategoryId={subcategoryId || null}
+              onChange={(cat, sub) => {
+                setCategoryId(cat ?? "");
+                setSubcategoryId(sub ?? "");
+              }}
+            />
           </div>
 
-          <div className="flex flex-col gap-2">
-            <Label>
-              {type === "expense"
-                ? "¿Corresponde a un gasto fijo?"
-                : "¿Corresponde a un ingreso recurrente?"}
-            </Label>
-            <Select
-              value={recurringId}
-              items={Object.fromEntries(
-                (type === "expense" ? recurringExpenses : recurringIncomes).map(
-                  (r) => [r.id, r.name]
-                )
-              )}
-              onValueChange={(v) => setRecurringId(v ?? "")}
-            >
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={type === "expense" ? "No, es un extra" : "No, es extraordinario"}
+          {type === "expense" ? (
+            <div className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox
+                  checked={isFixed}
+                  onCheckedChange={(c) => setIsFixed(c === true)}
                 />
-              </SelectTrigger>
-              <SelectContent>
-                {(type === "expense" ? recurringExpenses : recurringIncomes).map(
-                  (r) => (
+                Es un gasto fijo (recibo previsto)
+              </label>
+              <p className="pl-6 text-xs text-muted-foreground">
+                Descuenta igual del presupuesto de su categoría; esto solo marca
+                que es un recibo planificado, no un gasto variable.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <Label>¿Corresponde a un ingreso recurrente?</Label>
+              <Select
+                value={recurringId}
+                items={{
+                  "": "No, es extraordinario",
+                  ...Object.fromEntries(
+                    recurringIncomes.map((r) => [r.id, r.name])
+                  ),
+                }}
+                onValueChange={(v) => setRecurringId(v ?? "")}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="No, es extraordinario" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">No, es extraordinario</SelectItem>
+                  {recurringIncomes.map((r) => (
                     <SelectItem key={r.id} value={r.id}>
                       {r.name}
                     </SelectItem>
-                  )
-                )}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              {type === "expense"
-                ? "Si lo ligas a un fijo, cuenta contra su provisión y no resta del disponible."
-                : "Si no lo ligas, cuenta como ingreso extraordinario del mes."}
-            </p>
-          </div>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Si no lo ligas, cuenta como ingreso extraordinario del mes.
+              </p>
+            </div>
+          )}
 
           {type === "income" && (
             <div className="flex flex-col gap-2">

@@ -7,7 +7,8 @@ import { toast } from "sonner";
 import { Plus, Pencil, TriangleAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { addMonths, monthEnd } from "@/lib/budget";
-import { eur, type Category, type RecurringExpense } from "@/lib/types";
+import { eur, type Category, type RecurringExpense, type Subcategory } from "@/lib/types";
+import { CategorySubcategorySelect } from "@/components/category-select";
 import {
   Card,
   CardContent,
@@ -54,11 +55,13 @@ function monthLabel(isoDate: string): string {
 export function RecurringExpenses({
   expenses,
   categories,
+  subcategories,
   upcoming = {},
   month,
 }: {
   expenses: ExpenseRow[];
   categories: Category[];
+  subcategories: Subcategory[];
   upcoming?: Record<string, Upcoming>;
   month: string;
 }) {
@@ -104,7 +107,11 @@ export function RecurringExpenses({
               Provisión mensual total: {eur(total)}
             </CardDescription>
           </div>
-          <ExpenseDialog categories={categories} month={month}>
+          <ExpenseDialog
+            categories={categories}
+            subcategories={subcategories}
+            month={month}
+          >
             <Button size="sm" variant="outline">
               <Plus className="size-4" />
               Añadir
@@ -159,6 +166,7 @@ export function RecurringExpenses({
                 <span className="font-semibold">{eur(e.provision)}</span>
                 <ExpenseDialog
                   categories={categories}
+                  subcategories={subcategories}
                   month={month}
                   expense={e}
                   pending={upcoming[e.id]}
@@ -217,12 +225,14 @@ function UpcomingBadge({ change }: { change: Upcoming }) {
 
 function ExpenseDialog({
   categories,
+  subcategories,
   month,
   expense,
   pending,
   children,
 }: {
   categories: Category[];
+  subcategories: Subcategory[];
   month: string;
   expense?: ExpenseRow;
   pending?: Upcoming;
@@ -240,6 +250,9 @@ function ExpenseDialog({
     pending?.period ?? expense?.period ?? "monthly"
   );
   const [categoryId, setCategoryId] = useState(expense?.category_id ?? "");
+  const [subcategoryId, setSubcategoryId] = useState(
+    expense?.subcategory_id ?? ""
+  );
   // Al editar: desde cuándo aplica el cambio (versionado a futuro)
   const [effective, setEffective] = useState<"now" | "next">("next");
   const [saving, setSaving] = useState(false);
@@ -257,6 +270,7 @@ function ExpenseDialog({
       amount: Number(amount),
       period,
       category_id: categoryId || null,
+      subcategory_id: subcategoryId || null,
     };
 
     let error = null;
@@ -272,14 +286,19 @@ function ExpenseDialog({
       // importe/periodo se versiona.
       const identityChanged =
         payload.name !== expense.name ||
-        (payload.category_id ?? null) !== (expense.category_id ?? null);
+        (payload.category_id ?? null) !== (expense.category_id ?? null) ||
+        (payload.subcategory_id ?? null) !== (expense.subcategory_id ?? null);
       const economicChanged =
         payload.amount !== expense.amount || payload.period !== expense.period;
 
       if (identityChanged) {
         ({ error } = await supabase
           .from("recurring_expenses")
-          .update({ name: payload.name, category_id: payload.category_id })
+          .update({
+            name: payload.name,
+            category_id: payload.category_id,
+            subcategory_id: payload.subcategory_id,
+          })
           .eq("name", expense.name));
         done.push("nombre y categoría actualizados ya en todos los meses");
       }
@@ -431,23 +450,18 @@ function ExpenseDialog({
             </p>
           )}
           <div className="flex flex-col gap-2">
-            <Label>Categoría</Label>
-            <Select
-              value={categoryId}
-              items={Object.fromEntries(categories.map((c) => [c.id, c.name]))}
-              onValueChange={(v) => setCategoryId(v ?? "")}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Sin categoría" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Categoría y subcategoría</Label>
+            <CategorySubcategorySelect
+              categories={categories}
+              subcategories={subcategories}
+              kind="expense"
+              categoryId={categoryId || null}
+              subcategoryId={subcategoryId || null}
+              onChange={(cat, sub) => {
+                setCategoryId(cat ?? "");
+                setSubcategoryId(sub ?? "");
+              }}
+            />
           </div>
           {expense && pending && (
             <p className="rounded-md bg-amber-500/10 p-2 text-xs text-amber-600 dark:text-amber-400">
