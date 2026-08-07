@@ -32,7 +32,21 @@ type Row = {
   ai?: boolean;
 };
 
-type Fijo = { id: string; name: string };
+type Fijo = { id: string; name: string; category_id: string | null };
+
+/**
+ * Fijos elegibles para una fila: si tiene categoría, solo los de esa categoría
+ * (más los que no tienen ninguna). El fijo ya seleccionado se muestra siempre.
+ */
+function fijosForRow(fijos: Fijo[], row: Row): Fijo[] {
+  if (!row.category_id) return fijos;
+  return fijos.filter(
+    (f) =>
+      f.category_id === row.category_id ||
+      f.category_id === null ||
+      f.id === row.recurring_expense_id
+  );
+}
 
 export default function ImportarPage() {
   const router = useRouter();
@@ -233,7 +247,7 @@ export default function ImportarPage() {
                       <Select
                         value={row.recurring_expense_id ?? ""}
                         items={Object.fromEntries(
-                          fijos.map((f) => [f.id, f.name])
+                          fijosForRow(fijos, row).map((f) => [f.id, f.name])
                         )}
                         onValueChange={(v) =>
                           update(i, { recurring_expense_id: v || null })
@@ -243,7 +257,7 @@ export default function ImportarPage() {
                           <SelectValue placeholder="Sin gasto fijo (cuenta como extra)" />
                         </SelectTrigger>
                         <SelectContent>
-                          {fijos.map((f) => (
+                          {fijosForRow(fijos, row).map((f) => (
                             <SelectItem key={f.id} value={f.id}>
                               {f.name}
                             </SelectItem>

@@ -192,7 +192,11 @@ export async function POST(req: Request) {
   return Response.json({
     rows,
     categories: categoriesQ.data ?? [],
-    fijos: fijos.map((f) => ({ id: f.id, name: f.name })),
+    fijos: fijos.map((f) => ({
+      id: f.id,
+      name: f.name,
+      category_id: f.category_id,
+    })),
     fileName: file.name,
   });
 }
