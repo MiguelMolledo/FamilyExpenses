@@ -1,54 +1,19 @@
 import { createClient } from "@/lib/supabase/server";
-import {
-  getCategoryBudgets,
-  getMonthBudget,
-  getSuggestions,
-  getYearDeviations,
-} from "@/lib/budget";
+import { getCategoryBudgets, getMonthBudget } from "@/lib/budget";
 import { CategoryBudgets } from "@/components/presupuesto/category-budgets";
 import { monthStart, eur } from "@/lib/types";
-import { RecurringExpenses } from "@/components/presupuesto/recurring-expenses";
 import { RecurringIncomes } from "@/components/presupuesto/recurring-incomes";
-import { Suggestions } from "@/components/presupuesto/suggestions";
-import { Deviations } from "@/components/presupuesto/deviations";
 import { CloseMonth } from "@/components/presupuesto/close-month";
 import { Card, CardContent } from "@/components/ui/card";
 
 export default async function PresupuestoPage() {
   const supabase = await createClient();
   const month = monthStart(new Date());
-  const [
-    budget,
-    categoryBudgets,
-    suggestions,
-    deviations,
-    categoriesQ,
-    subcategoriesQ,
-    profilesQ,
-    upcomingQ,
-  ] =
-    await Promise.all([
-      getMonthBudget(supabase, month),
-      getCategoryBudgets(supabase, month),
-      getSuggestions(supabase, month),
-      getYearDeviations(supabase, month),
-      supabase.from("categories").select("*").order("name"),
-      supabase.from("subcategories").select("*").order("name"),
-      supabase.from("profiles").select("*"),
-      supabase
-        .from("recurring_expenses")
-        .select("id, name, amount, period, starts_on, supersedes_id")
-        .gt("starts_on", month)
-        .not("supersedes_id", "is", null),
-    ]);
-
-  // Versión futura pendiente de cada fijo, indexada por el fijo al que sustituye
-  const upcoming = Object.fromEntries(
-    (upcomingQ.data ?? []).map((u) => [
-      u.supersedes_id as string,
-      { ...u, amount: Number(u.amount) },
-    ])
-  );
+  const [budget, categoryBudgets, profilesQ] = await Promise.all([
+    getMonthBudget(supabase, month),
+    getCategoryBudgets(supabase, month),
+    supabase.from("profiles").select("*"),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -63,15 +28,15 @@ export default async function PresupuestoPage() {
             </p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Provisiones</p>
+            <p className="text-xs text-muted-foreground">Presupuesto</p>
             <p className="font-semibold text-amber-600">
-              {eur(budget.provisions)}
+              {eur(budget.budgeted)}
             </p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Margen previsto</p>
             <p className="font-semibold">
-              {eur(budget.expectedIncome - budget.provisions)}
+              {eur(budget.expectedIncome - budget.budgeted)}
             </p>
           </div>
         </CardContent>
@@ -79,23 +44,11 @@ export default async function PresupuestoPage() {
 
       <CategoryBudgets rows={categoryBudgets.rows} />
 
-      <Suggestions suggestions={suggestions} />
-
-      <RecurringExpenses
-        expenses={budget.recurringExpenses}
-        categories={categoriesQ.data ?? []}
-        subcategories={subcategoriesQ.data ?? []}
-        upcoming={upcoming}
-        month={month}
-      />
-
       <RecurringIncomes
         incomes={budget.recurringIncomes}
         profiles={profilesQ.data ?? []}
         month={month}
       />
-
-      <Deviations deviations={deviations} />
 
       <CloseMonth budget={budget} />
     </div>

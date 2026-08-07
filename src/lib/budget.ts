@@ -1,7 +1,6 @@
 import type { SupabaseClient as SupabaseClientBase } from "@supabase/supabase-js";
 import type {
   Category,
-  RecurringExpense,
   RecurringIncome,
   Subcategory,
   Transaction,
@@ -11,9 +10,19 @@ import type {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseClient = SupabaseClientBase<any, "family", "family", any, any>;
 
-/** Provisión mensual de un gasto fijo: anual/12, mensual tal cual. */
-export function monthlyProvision(e: Pick<RecurringExpense, "amount" | "period">): number {
-  return e.period === "annual" ? e.amount / 12 : e.amount;
+/**
+ * Presupuesto mensual efectivo de una categoría: el suyo o, si no tiene,
+ * la suma de los de sus subcategorías.
+ */
+export function effectiveBudget(
+  c: Category,
+  subcategories: Subcategory[]
+): number | null {
+  if (c.monthly_budget != null) return Number(c.monthly_budget);
+  const subs = subcategories
+    .filter((s) => s.category_id === c.id && s.monthly_budget != null)
+    .reduce((s, x) => s + Number(x.monthly_budget), 0);
+  return subs > 0 ? subs : null;
 }
 
 export function addMonths(month: string, n: number): string {
@@ -40,77 +49,56 @@ export type MonthBudget = {
   month: string;
   expectedIncome: number;
   realIncome: number;
-  provisions: number; // fijos + objetivo de ahorro
+  /** referencia del mes: suma de presupuestos por categoría + objetivo de ahorro */
+  budgeted: number;
   savingsTarget: number;
   realExpenses: number;
-  /** Gastos variables del mes (no fijos, sin traspasos) */
+  /** Gastos variables del mes (no marcados como recibo fijo, sin traspasos) */
   extraExpenses: number;
-  /**
-   * Exceso de los fijos este mes: cuánto ha crecido (o bajado) el sobregasto
-   * acumulado del año de las subcategorías cuyo gasto fijo real supera lo
-   * provisionado. Positivo = los fijos se han "comido" disponible.
-   */
-  fixedOverrun: number;
   carryover: number;
-  /** ingresos del mes − provisiones − variables − exceso de fijos + carryover */
+  /** ingresos del mes − gasto real − objetivo de ahorro + arrastre */
   available: number;
-  recurringExpenses: (RecurringExpense & { provision: number; realSpent: number })[];
   recurringIncomes: RecurringIncome[];
   transactions: Transaction[];
   closed: boolean;
 };
 
+/**
+ * Resumen del mes. Solo cuenta lo real: el gasto ataca al disponible cuando
+ * el movimiento existe, nunca por adelantado. El presupuesto por categoría es
+ * la referencia de lo previsto; no se descuenta nada que no haya pasado.
+ */
 export async function getMonthBudget(
   supabase: SupabaseClient,
   month: string
 ): Promise<MonthBudget> {
   const end = monthEnd(month);
   const prevMonth = addMonths(month, -1);
-  // El sobregasto de fijos se mide sobre el acumulado del año, así que el mes
-  // anterior solo cuenta si es del mismo año (el fondo se resetea en enero).
-  const prevSameYear = prevMonth.slice(0, 4) === month.slice(0, 4);
-  const [
-    expensesQ,
-    incomesQ,
-    txQ,
-    planQ,
-    closureQ,
-    prevClosureQ,
-    categoriesQ,
-    overrunNow,
-    overrunPrev,
-  ] = await Promise.all([
-    supabase
-      .from("recurring_expenses")
-      .select("*")
-      .lte("starts_on", end)
-      .or(`ends_on.is.null,ends_on.gte.${month}`)
-      .order("name"),
-    supabase
-      .from("recurring_incomes")
-      .select("*")
-      .lte("starts_on", end)
-      .or(`ends_on.is.null,ends_on.gte.${month}`)
-      .order("name"),
-    supabase
-      .from("transactions")
-      .select("*")
-      .gte("date", month)
-      .lte("date", end)
-      .order("date", { ascending: false }),
-    supabase.from("savings_plans").select("*").maybeSingle(),
-    supabase.from("month_closures").select("*").eq("month", month).maybeSingle(),
-    supabase
-      .from("month_closures")
-      .select("*")
-      .eq("month", prevMonth)
-      .maybeSingle(),
-    supabase.from("categories").select("id, exclude_from_stats"),
-    getYearOverrun(supabase, month),
-    prevSameYear ? getYearOverrun(supabase, prevMonth) : Promise.resolve(0),
-  ]);
+  const [incomesQ, txQ, planQ, closureQ, prevClosureQ, categoriesQ, subsQ] =
+    await Promise.all([
+      supabase
+        .from("recurring_incomes")
+        .select("*")
+        .lte("starts_on", end)
+        .or(`ends_on.is.null,ends_on.gte.${month}`)
+        .order("name"),
+      supabase
+        .from("transactions")
+        .select("*")
+        .gte("date", month)
+        .lte("date", end)
+        .order("date", { ascending: false }),
+      supabase.from("savings_plans").select("*").maybeSingle(),
+      supabase.from("month_closures").select("*").eq("month", month).maybeSingle(),
+      supabase
+        .from("month_closures")
+        .select("*")
+        .eq("month", prevMonth)
+        .maybeSingle(),
+      supabase.from("categories").select("*"),
+      supabase.from("subcategories").select("*"),
+    ]);
 
-  const recurringExpensesRaw = (expensesQ.data ?? []) as RecurringExpense[];
   const recurringIncomes = (incomesQ.data ?? []) as RecurringIncome[];
   const transactions = (txQ.data ?? []).map((t) => ({
     ...t,
@@ -118,33 +106,22 @@ export async function getMonthBudget(
   })) as Transaction[];
   const savingsTarget = Number(planQ.data?.monthly_target ?? 0);
   const carryover = Number(prevClosureQ.data?.carryover ?? 0);
+  const categories = (categoriesQ.data ?? []) as Category[];
+  const subcategories = (subsQ.data ?? []) as Subcategory[];
   // Traspasos entre cuentas propias: fuera de ingresos y gastos
   const excludedCats = new Set(
-    (categoriesQ.data ?? []).filter((c) => c.exclude_from_stats).map((c) => c.id)
+    categories.filter((c) => c.exclude_from_stats).map((c) => c.id)
   );
   const counted = transactions.filter(
     (t) => !t.category_id || !excludedCats.has(t.category_id)
   );
 
-  // Gasto fijo real por subcategoría (los fijos ya no se enlazan por nombre)
-  const spentBySubcat = new Map<string, number>();
-  for (const t of counted) {
-    if (t.type === "expense" && t.is_fixed && t.subcategory_id) {
-      spentBySubcat.set(
-        t.subcategory_id,
-        (spentBySubcat.get(t.subcategory_id) ?? 0) + t.amount
-      );
-    }
-  }
+  const budgeted =
+    categories
+      .filter((c) => !c.exclude_from_stats)
+      .reduce((s, c) => s + (effectiveBudget(c, subcategories) ?? 0), 0) +
+    savingsTarget;
 
-  const recurringExpenses = recurringExpensesRaw.map((e) => ({
-    ...e,
-    amount: Number(e.amount),
-    provision: monthlyProvision({ amount: Number(e.amount), period: e.period }),
-    realSpent: e.subcategory_id ? spentBySubcat.get(e.subcategory_id) ?? 0 : 0,
-  }));
-
-  const fixedProvisions = recurringExpenses.reduce((s, e) => s + e.provision, 0);
   const expectedIncome = recurringIncomes.reduce((s, i) => s + Number(i.amount), 0);
 
   const extraordinaryIncome = counted
@@ -159,228 +136,22 @@ export async function getMonthBudget(
     .filter((t) => t.type === "expense" && !t.is_fixed)
     .reduce((s, t) => s + t.amount, 0);
 
-  const provisions = fixedProvisions + savingsTarget;
-  // Exceso de fijos: lo que ha crecido este mes el sobregasto acumulado del
-  // año. Así el gas de invierno tira primero del colchón provisionado y solo
-  // resta disponible cuando el fondo de la subcategoría se agota.
-  const fixedOverrun = overrunNow - overrunPrev;
-  const available =
-    realIncome - provisions - extraExpenses - fixedOverrun + carryover;
+  const available = realIncome - realExpenses - savingsTarget + carryover;
 
   return {
     month,
     expectedIncome,
     realIncome,
-    provisions,
+    budgeted,
     savingsTarget,
     realExpenses,
     extraExpenses,
-    fixedOverrun,
     carryover,
     available,
-    recurringExpenses,
     recurringIncomes,
     transactions,
     closed: !!closureQ.data,
   };
-}
-
-/**
- * Sobregasto acumulado del año hasta `month`: suma, por subcategoría con
- * fijos, de max(0, gasto fijo real YTD − provisionado YTD).
- */
-export async function getYearOverrun(
-  supabase: SupabaseClient,
-  month: string
-): Promise<number> {
-  const deviations = await getYearDeviations(supabase, month);
-  return deviations.reduce((s, d) => s + Math.max(0, -d.deviation), 0);
-}
-
-export type ConceptDeviation = {
-  name: string;
-  provisionYtd: number;
-  realYtd: number;
-  /** positivo = reservado de más; negativo = te quedas corto */
-  deviation: number;
-};
-
-/**
- * Desviación acumulada del año por subcategoría con fijos: provisiones de
- * enero a `month` vs gasto real marcado como fijo en esa subcategoría.
- */
-export async function getYearDeviations(
-  supabase: SupabaseClient,
-  month: string
-): Promise<ConceptDeviation[]> {
-  const year = month.slice(0, 4);
-  const jan = `${year}-01-01`;
-  const end = monthEnd(month);
-
-  const [expensesQ, txQ, subsQ, catsQ] = await Promise.all([
-    supabase
-      .from("recurring_expenses")
-      .select("*")
-      .lte("starts_on", end)
-      .or(`ends_on.is.null,ends_on.gte.${jan}`),
-    supabase
-      .from("transactions")
-      .select("amount, subcategory_id, date, type")
-      .eq("type", "expense")
-      .eq("is_fixed", true)
-      .not("subcategory_id", "is", null)
-      .gte("date", jan)
-      .lte("date", end),
-    supabase.from("subcategories").select("id, name, category_id"),
-    supabase.from("categories").select("id, name"),
-  ]);
-
-  const rows = (expensesQ.data ?? []) as RecurringExpense[];
-  const catName = new Map((catsQ.data ?? []).map((c) => [c.id, c.name]));
-  const subLabel = new Map(
-    (subsQ.data ?? []).map((s) => [
-      s.id,
-      `${catName.get(s.category_id) ?? "?"} › ${s.name}`,
-    ])
-  );
-  // key = subcategory_id ("(sin subcategoría)" agrupa los fijos sin asignar)
-  const result = new Map<string, ConceptDeviation>();
-  const entryFor = (key: string) => {
-    let e = result.get(key);
-    if (!e) {
-      e = {
-        name: subLabel.get(key) ?? "Sin subcategoría",
-        provisionYtd: 0,
-        realYtd: 0,
-        deviation: 0,
-      };
-      result.set(key, e);
-    }
-    return e;
-  };
-
-  // Provisiones: por cada mes del año hasta `month`, suma la provisión de las
-  // versiones activas ese mes, agrupada por subcategoría del fijo.
-  for (let m = jan.slice(0, 8) + "01"; m <= month; m = addMonths(m, 1)) {
-    for (const r of rows) {
-      if (!activeInMonth(r, m)) continue;
-      entryFor(r.subcategory_id ?? "none").provisionYtd += monthlyProvision({
-        amount: Number(r.amount),
-        period: r.period,
-      });
-    }
-  }
-
-  for (const t of txQ.data ?? []) {
-    const entry = result.get(t.subcategory_id!);
-    if (!entry) continue; // gasto fijo en subcat sin fijos dados de alta
-    entry.realYtd += Number(t.amount);
-  }
-
-  for (const entry of result.values()) {
-    entry.deviation = entry.provisionYtd - entry.realYtd;
-  }
-  return [...result.values()].sort((a, b) => a.deviation - b.deviation);
-}
-
-export type Suggestion = {
-  name: string;
-  currentAnnual: number;
-  estimatedAnnual: number;
-  monthsCovered: number;
-};
-
-/**
- * Sugerencias de ajuste por subcategoría: gasto fijo real de los últimos 12
- * meses anualizado vs importe anual de los fijos de esa subcategoría. Solo
- * con ≥3 meses de histórico y >10% de diferencia.
- */
-export async function getSuggestions(
-  supabase: SupabaseClient,
-  month: string
-): Promise<Suggestion[]> {
-  const from = addMonths(month, -11);
-  const end = monthEnd(month);
-
-  const [expensesQ, txQ, subsQ, catsQ] = await Promise.all([
-    supabase
-      .from("recurring_expenses")
-      .select("*")
-      .lte("starts_on", end)
-      .or(`ends_on.is.null,ends_on.gte.${month}`),
-    supabase
-      .from("transactions")
-      .select("amount, subcategory_id, date")
-      .eq("type", "expense")
-      .eq("is_fixed", true)
-      .not("subcategory_id", "is", null)
-      .gte("date", from)
-      .lte("date", end),
-    supabase.from("subcategories").select("id, name, category_id"),
-    supabase.from("categories").select("id, name"),
-  ]);
-
-  const active = (expensesQ.data ?? []) as RecurringExpense[];
-  const catName = new Map((catsQ.data ?? []).map((c) => [c.id, c.name]));
-  const subLabel = new Map(
-    (subsQ.data ?? []).map((s) => [
-      s.id,
-      `${catName.get(s.category_id) ?? "?"} › ${s.name}`,
-    ])
-  );
-
-  const realBySub = new Map<string, number>();
-  const monthsBySub = new Map<string, Set<string>>();
-  for (const t of txQ.data ?? []) {
-    const id = t.subcategory_id!;
-    realBySub.set(id, (realBySub.get(id) ?? 0) + Number(t.amount));
-    const set = monthsBySub.get(id) ?? new Set<string>();
-    set.add(t.date.slice(0, 7));
-    monthsBySub.set(id, set);
-  }
-
-  // Fijos agrupados por subcategoría: se compara el conjunto
-  const bySub = new Map<string, RecurringExpense[]>();
-  for (const e of active) {
-    if (!e.subcategory_id) continue;
-    bySub.set(e.subcategory_id, [...(bySub.get(e.subcategory_id) ?? []), e]);
-  }
-
-  const suggestions: Suggestion[] = [];
-  for (const [subId, group] of bySub) {
-    const real = realBySub.get(subId) ?? 0;
-    if (real === 0) continue;
-    const oldestStart = group
-      .map((e) => e.starts_on)
-      .sort()[0]
-      .slice(0, 7) + "-01";
-    const covered = Math.min(12, monthsBetween(oldestStart, month) + 1);
-    if (covered < 3) continue;
-    const estimatedAnnual = (real / covered) * 12;
-    const currentAnnual = group.reduce(
-      (s, e) =>
-        s + (e.period === "annual" ? Number(e.amount) : Number(e.amount) * 12),
-      0
-    );
-    if (
-      currentAnnual > 0 &&
-      Math.abs(estimatedAnnual - currentAnnual) / currentAnnual > 0.1
-    ) {
-      suggestions.push({
-        name: subLabel.get(subId) ?? "Sin subcategoría",
-        currentAnnual,
-        estimatedAnnual,
-        monthsCovered: covered,
-      });
-    }
-  }
-  return suggestions;
-}
-
-function monthsBetween(a: string, b: string): number {
-  const [ya, ma] = a.split("-").map(Number);
-  const [yb, mb] = b.split("-").map(Number);
-  return (yb - ya) * 12 + (mb - ma);
 }
 
 export type CategoryBudgetRow = {
@@ -437,16 +208,7 @@ export async function getCategoryBudgets(
 
   const rows: CategoryBudgetRow[] = categories.map((c) => {
     const subs = subcategories.filter((s) => s.category_id === c.id);
-    const subBudgets = subs.reduce(
-      (s, x) => s + (x.monthly_budget != null ? Number(x.monthly_budget) : 0),
-      0
-    );
-    const budget =
-      c.monthly_budget != null
-        ? Number(c.monthly_budget)
-        : subBudgets > 0
-          ? subBudgets
-          : null;
+    const budget = effectiveBudget(c, subcategories);
 
     const inCat = tx.filter((t) => t.category_id === c.id);
     const spent = inCat
@@ -496,7 +258,7 @@ export async function getCategoryBudgets(
 export type YearMonthRow = {
   month: string;
   expectedIncome: number;
-  provisions: number; // fijos + ahorro
+  budgeted: number; // presupuestos por categoría + ahorro
   realIncome: number;
   realExpenses: number;
 };
@@ -505,13 +267,13 @@ export type YearOverview = {
   months: YearMonthRow[];
   totals: {
     expectedIncome: number;
-    provisions: number;
+    budgeted: number;
     realIncome: number;
     realExpenses: number;
   };
 };
 
-/** Vista anual: por cada mes del año, previsto vs real. */
+/** Vista anual: por cada mes del año, presupuesto vs real. */
 export async function getYearOverview(
   supabase: SupabaseClient,
   year: number
@@ -519,12 +281,7 @@ export async function getYearOverview(
   const jan = `${year}-01-01`;
   const dec31 = `${year}-12-31`;
 
-  const [expensesQ, incomesQ, txQ, planQ, catsQ] = await Promise.all([
-    supabase
-      .from("recurring_expenses")
-      .select("*")
-      .lte("starts_on", dec31)
-      .or(`ends_on.is.null,ends_on.gte.${jan}`),
+  const [incomesQ, txQ, planQ, catsQ, subsQ] = await Promise.all([
     supabase
       .from("recurring_incomes")
       .select("*")
@@ -536,34 +293,33 @@ export async function getYearOverview(
       .gte("date", jan)
       .lte("date", dec31),
     supabase.from("savings_plans").select("*").maybeSingle(),
-    supabase.from("categories").select("id, exclude_from_stats"),
+    supabase.from("categories").select("*"),
+    supabase.from("subcategories").select("*"),
   ]);
 
-  const recExpenses = (expensesQ.data ?? []) as RecurringExpense[];
   const recIncomes = (incomesQ.data ?? []) as RecurringIncome[];
   const savingsTarget = Number(planQ.data?.monthly_target ?? 0);
+  const categories = (catsQ.data ?? []) as Category[];
+  const subcategories = (subsQ.data ?? []) as Subcategory[];
   const excludedCats = new Set(
-    (catsQ.data ?? []).filter((c) => c.exclude_from_stats).map((c) => c.id)
+    categories.filter((c) => c.exclude_from_stats).map((c) => c.id)
   );
+  const budgeted =
+    categories
+      .filter((c) => !c.exclude_from_stats)
+      .reduce((s, c) => s + (effectiveBudget(c, subcategories) ?? 0), 0) +
+    savingsTarget;
 
   const months: YearMonthRow[] = [];
   for (let m = 1; m <= 12; m++) {
     const month = `${year}-${String(m).padStart(2, "0")}-01`;
-    const provisions =
-      recExpenses
-        .filter((e) => activeInMonth(e, month))
-        .reduce(
-          (s, e) =>
-            s + monthlyProvision({ amount: Number(e.amount), period: e.period }),
-          0
-        ) + savingsTarget;
     const expectedIncome = recIncomes
       .filter((i) => activeInMonth(i, month))
       .reduce((s, i) => s + Number(i.amount), 0);
     months.push({
       month,
       expectedIncome,
-      provisions,
+      budgeted,
       realIncome: expectedIncome, // extraordinarios se suman abajo
       realExpenses: 0,
     });
@@ -582,11 +338,11 @@ export async function getYearOverview(
   const totals = months.reduce(
     (acc, r) => ({
       expectedIncome: acc.expectedIncome + r.expectedIncome,
-      provisions: acc.provisions + r.provisions,
+      budgeted: acc.budgeted + r.budgeted,
       realIncome: acc.realIncome + r.realIncome,
       realExpenses: acc.realExpenses + r.realExpenses,
     }),
-    { expectedIncome: 0, provisions: 0, realIncome: 0, realExpenses: 0 }
+    { expectedIncome: 0, budgeted: 0, realIncome: 0, realExpenses: 0 }
   );
 
   return { months, totals };

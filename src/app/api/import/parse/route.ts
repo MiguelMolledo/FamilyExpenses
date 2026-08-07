@@ -72,29 +72,31 @@ export async function POST(req: Request) {
     seen.set(base, n);
     return n === 1 ? base : `${base}#${n}`;
   });
-  const today = new Date().toISOString().slice(0, 10);
   // Todo lo ya guardado en el rango de fechas del extracto: sirve para el
   // duplicado exacto (misma huella) y para el blando (misma fecha+importe+tipo
   // con otro texto, p.ej. el mismo recibo en el Excel corto y el largo).
   const minDate = movements.reduce((a, m) => (m.date < a ? m.date : a), "9999");
   const maxDate = movements.reduce((a, m) => (m.date > a ? m.date : a), "0000");
-  const [rulesQ, rangeQ, categoriesQ, subcategoriesQ, fijosQ] = await Promise.all([
-    supabase
-      .from("category_rules")
-      .select("pattern, category_id, subcategory_id"),
-    supabase
-      .from("transactions")
-      .select("date, amount, type, dedup_hash")
-      .gte("date", minDate)
-      .lte("date", maxDate),
-    supabase.from("categories").select("id, name, kind"),
-    supabase.from("subcategories").select("id, category_id, name, kind"),
-    supabase
-      .from("recurring_expenses")
-      .select("id, name, category_id, subcategory_id")
-      .lte("starts_on", today)
-      .or(`ends_on.is.null,ends_on.gte.${today}`),
-  ]);
+  const [rulesQ, rangeQ, categoriesQ, subcategoriesQ, fixedTxQ] =
+    await Promise.all([
+      supabase
+        .from("category_rules")
+        .select("pattern, category_id, subcategory_id"),
+      supabase
+        .from("transactions")
+        .select("date, amount, type, dedup_hash")
+        .gte("date", minDate)
+        .lte("date", maxDate),
+      supabase.from("categories").select("id, name, kind"),
+      supabase.from("subcategories").select("id, category_id, name, kind"),
+      // Subcats donde ya hay recibos marcados como fijos: pista del checkbox
+      supabase
+        .from("transactions")
+        .select("subcategory_id")
+        .eq("is_fixed", true)
+        .not("subcategory_id", "is", null)
+        .limit(1000),
+    ]);
 
   const rules = (rulesQ.data ?? []).sort(
     (a, b) => b.pattern.length - a.pattern.length
@@ -122,11 +124,10 @@ export async function POST(req: Request) {
   });
   const categories = categoriesQ.data ?? [];
   const subcategories = subcategoriesQ.data ?? [];
-  const fijos = fijosQ.data ?? [];
   const subById = new Map(subcategories.map((s) => [s.id, s]));
-  // Subcats con algún fijo dado de alta: pista para sugerir el checkbox
+  // Subcats con recibos previstos en el histórico: pista para el checkbox
   const fixedSubIds = new Set(
-    fijos.map((f) => f.subcategory_id).filter(Boolean)
+    (fixedTxQ.data ?? []).map((t) => t.subcategory_id).filter(Boolean)
   );
 
   const rows = movements.map((m, i) => {
@@ -196,9 +197,6 @@ export async function POST(req: Request) {
           'Para cada concepto bancario, sugiere "category" y "subcategory" eligiendo un par EXACTO de la taxonomía (respeta el tipo: gasto o ingreso). Usa null si no hay un candidato claro; no inventes nombres.',
           '"fijo" es true solo si claramente es un recibo recurrente planificado (hipoteca, suscripción, seguro, cuota…), false para gasto variable (compras, restaurantes, gasolina…).',
           `Taxonomía (Categoría > Subcategoría (tipo)): ${taxonomy}`,
-          `Recibos fijos dados de alta (para reconocerlos): ${fijos
-            .map((f) => f.name)
-            .join(", ")}`,
           `Conceptos a clasificar (tipo entre paréntesis): ${pending
             .map((p) => `"${p.description}" (${p.type})`)
             .join("; ")}`,

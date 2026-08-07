@@ -8,12 +8,7 @@ import {
 } from "ai";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import {
-  getCategoryBudgets,
-  getMonthBudget,
-  addMonths,
-  monthEnd,
-} from "@/lib/budget";
+import { getCategoryBudgets, getMonthBudget, monthEnd } from "@/lib/budget";
 import { monthStart } from "@/lib/types";
 
 export const maxDuration = 60;
@@ -34,15 +29,10 @@ export async function POST(req: Request) {
   const month = monthStart(new Date());
 
   // Contexto de la familia para que el modelo resuelva nombres sin adivinar
-  const [categoriesQ, subcategoriesQ, recurringExpQ, recurringIncQ, petsQ, profilesQ] =
+  const [categoriesQ, subcategoriesQ, recurringIncQ, petsQ, profilesQ] =
     await Promise.all([
       supabase.from("categories").select("id, name, kind"),
       supabase.from("subcategories").select("id, category_id, name, kind"),
-      supabase
-        .from("recurring_expenses")
-        .select("id, name, amount, period, category_id, subcategory_id")
-        .lte("starts_on", monthEnd(month))
-        .or(`ends_on.is.null,ends_on.gte.${month}`),
       supabase
         .from("recurring_incomes")
         .select("id, name, amount")
@@ -54,7 +44,6 @@ export async function POST(req: Request) {
 
   const categories = categoriesQ.data ?? [];
   const subcategories = subcategoriesQ.data ?? [];
-  const recurringExpenses = recurringExpQ.data ?? [];
   const recurringIncomes = recurringIncQ.data ?? [];
   const pets = petsQ.data ?? [];
   const profiles = profilesQ.data ?? [];
@@ -72,13 +61,6 @@ export async function POST(req: Request) {
             (!categoryId || s.category_id === categoryId)
         )
       : undefined;
-  const findRecurringExpense = (name?: string) =>
-    name
-      ? recurringExpenses.find(
-          (r) => r.name.toLowerCase() === name.toLowerCase()
-        )
-      : undefined;
-
   const system = `Eres el asistente de FamilyExpenses, la app de gastos de la familia. Responde SIEMPRE en español, breve y al grano (se usa desde el móvil).
 
 Hoy es ${today}. El mes actual es ${month.slice(0, 7)}.
@@ -92,15 +74,15 @@ Datos de la familia:
         .join(", ")}`;
     })
     .join(" | ") || "ninguna"}
-- Gastos fijos dados de alta (recibos previstos): ${recurringExpenses.map((r) => `${r.name} (${r.amount}€/${r.period === "annual" ? "año" : "mes"})`).join(", ") || "ninguno"}
 - Ingresos recurrentes: ${recurringIncomes.map((r) => `${r.name} (${r.amount}€/mes)`).join(", ") || "ninguno"}
 - Mascotas: ${pets.map((p) => `${p.name} (${p.default_split_pct}%)`).join(", ") || "ninguna"}
 - Miembros: ${profiles.map((p) => p.display_name).join(", ")}
 
 Modelo de presupuesto:
 - El presupuesto vive en la categoría; TODO gasto de la categoría descuenta de él, sea fijo o variable.
-- is_fixed=true solo marca que es un recibo recurrente planificado (hipoteca, suscripción, seguro…): sirve para comparar lo previsto con lo pagado, no cambia el presupuesto. Una cena o una compra puntual es is_fixed=false aunque su categoría tenga fijos.
-- Las categorías con sobrante "acumula" arrastran lo no gastado del año; consulta get_category_budgets para saldos.
+- Solo cuenta el gasto real: nada se descuenta por adelantado. El disponible del mes es ingresos − gasto real − objetivo de ahorro + arrastre.
+- is_fixed=true solo marca que es un recibo recurrente planificado (hipoteca, suscripción, seguro…); no cambia el presupuesto. Una cena o una compra puntual es is_fixed=false aunque sea de una categoría con recibos.
+- Las categorías con sobrante "acumula" arrastran lo no gastado del año (así los recibos anuales como IBI o seguros caben en su mes); consulta get_category_budgets para saldos.
 - Los traspasos entre cuentas propias van en la categoría Traspaso y no cuentan como gasto ni ingreso.
 
 Reglas:
@@ -211,69 +193,6 @@ Reglas:
         },
       }),
 
-      add_recurring_expense: tool({
-        description:
-          "Crea un gasto fijo nuevo que se provisiona cada mes (anual/12 si period=annual).",
-        inputSchema: z.object({
-          name: z.string(),
-          amount: z.number().positive(),
-          period: z.enum(["monthly", "annual"]),
-          category_name: z.string().optional(),
-          subcategory_name: z.string().optional(),
-        }),
-        execute: async (input) => {
-          const category = findCategory(input.category_name);
-          const sub = findSubcategory(input.subcategory_name, category?.id);
-          const { error } = await supabase.from("recurring_expenses").insert({
-            name: input.name,
-            amount: input.amount,
-            period: input.period,
-            category_id: category?.id ?? sub?.category_id ?? null,
-            subcategory_id: sub?.id ?? null,
-            starts_on: month,
-          });
-          return error ? { error: error.message } : { ok: true };
-        },
-      }),
-
-      update_recurring_expense: tool({
-        description:
-          "Cambia el importe de un gasto fijo existente. effective='next' lo aplica desde el mes que viene (recomendado), 'now' corrige la versión actual.",
-        inputSchema: z.object({
-          name: z.string(),
-          new_amount: z.number().positive(),
-          new_period: z.enum(["monthly", "annual"]).optional(),
-          effective: z.enum(["next", "now"]).default("next"),
-        }),
-        execute: async (input) => {
-          const current = findRecurringExpense(input.name);
-          if (!current) return { error: `No existe el gasto fijo "${input.name}"` };
-          const period = input.new_period ?? current.period;
-          if (input.effective === "now") {
-            const { error } = await supabase
-              .from("recurring_expenses")
-              .update({ amount: input.new_amount, period })
-              .eq("id", current.id);
-            return error ? { error: error.message } : { ok: true };
-          }
-          const { error: closeErr } = await supabase
-            .from("recurring_expenses")
-            .update({ ends_on: monthEnd(month) })
-            .eq("id", current.id);
-          if (closeErr) return { error: closeErr.message };
-          const { error } = await supabase.from("recurring_expenses").insert({
-            name: current.name,
-            amount: input.new_amount,
-            period,
-            category_id: current.category_id,
-            subcategory_id: current.subcategory_id,
-            starts_on: addMonths(month, 1),
-            supersedes_id: current.id,
-          });
-          return error ? { error: error.message } : { ok: true };
-        },
-      }),
-
       add_savings_movement: tool({
         description:
           "Registra un movimiento en la hucha de ahorro: aportación (monthly/extra), retirada (withdrawal, importe positivo) o intereses (interest).",
@@ -306,7 +225,7 @@ Reglas:
 
       get_month_summary: tool({
         description:
-          "Resumen de un mes: ingresos, provisiones, gasto real, extras y disponible.",
+          "Resumen de un mes: ingresos, presupuesto, gasto real, variables y disponible.",
         inputSchema: z.object({
           month: z
             .string()
@@ -319,10 +238,10 @@ Reglas:
             month: b.month,
             ingresos_previstos: b.expectedIncome,
             ingresos_reales: b.realIncome,
-            provisiones: b.provisions,
+            presupuesto: b.budgeted,
+            objetivo_ahorro: b.savingsTarget,
             gasto_real: b.realExpenses,
-            gastos_extra: b.extraExpenses,
-            exceso_fijos: b.fixedOverrun,
+            gastos_variables: b.extraExpenses,
             disponible: b.available,
             cerrado: b.closed,
           };

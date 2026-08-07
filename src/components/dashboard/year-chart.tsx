@@ -20,7 +20,7 @@ export function YearChart({
   const max = Math.max(
     1,
     ...overview.months.map((m) =>
-      Math.max(m.realIncome, m.realExpenses, m.provisions)
+      Math.max(m.realIncome, m.realExpenses, m.budgeted)
     )
   );
 
@@ -57,7 +57,7 @@ export function YearChart({
             <div
               key={m.month}
               className="group relative flex flex-1 flex-col items-center gap-0.5"
-              title={`${m.month.slice(0, 7)}: ingresos ${eur(m.realIncome)}, gastos ${eur(m.realExpenses)}, previsto ${eur(m.provisions)}`}
+              title={`${m.month.slice(0, 7)}: ingresos ${eur(m.realIncome)}, gastos ${eur(m.realExpenses)}, previsto ${eur(m.budgeted)}`}
             >
               <div
                 className={cn(
@@ -85,7 +85,7 @@ export function YearChart({
                 <div
                   className="absolute inset-x-0 border-t-2 border-dashed opacity-70"
                   style={{
-                    bottom: `${(m.provisions / max) * 100}%`,
+                    bottom: `${(m.budgeted / max) * 100}%`,
                     borderColor: "var(--viz-planned)",
                   }}
                 />

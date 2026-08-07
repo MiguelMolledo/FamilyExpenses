@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import {
   getCategoryBudgets,
   getMonthBudget,
-  getYearDeviations,
   getYearOverview,
   monthEnd,
 } from "@/lib/budget";
@@ -24,7 +23,6 @@ import {
 import {
   ArrowLeftRight,
   PiggyBank,
-  TriangleAlert,
   TrendingUp,
   TrendingDown,
 } from "lucide-react";
@@ -43,12 +41,11 @@ export default async function DashboardPage({
   const year = Number(month.slice(0, 4));
   const monthIdx = Number(month.slice(5, 7)) - 1; // 0-based
 
-  const [budget, categoryBudgets, overview, deviations, savingsQ, categoriesQ] =
+  const [budget, categoryBudgets, overview, savingsQ, categoriesQ] =
     await Promise.all([
       getMonthBudget(supabase, month),
       getCategoryBudgets(supabase, month),
       getYearOverview(supabase, year),
-      getYearDeviations(supabase, month),
       supabase.from("savings_movements").select("date, amount").order("date"),
       supabase.from("categories").select("*"),
     ]);
@@ -106,12 +103,9 @@ export default async function DashboardPage({
   const monthLabel = new Date(month + "T00:00:00").toLocaleDateString("es-ES", {
     month: "long",
   });
-  const worstDeviations = deviations
-    .filter((d) => d.deviation < -20)
-    .slice(0, 3);
 
   const annualMargin =
-    overview.totals.expectedIncome - overview.totals.provisions;
+    overview.totals.expectedIncome - overview.totals.budgeted;
 
   return (
     <div className="flex flex-col gap-4">
@@ -147,12 +141,10 @@ export default async function DashboardPage({
             {eur(budget.available)}
           </p>
           <p className="mt-2 text-xs text-muted-foreground">
-            Ingresos {eur(budget.realIncome)} − provisiones{" "}
-            {eur(budget.provisions)} − extras {eur(budget.extraExpenses)}
-            {budget.fixedOverrun > 0.005 &&
-              ` − exceso de fijos ${eur(budget.fixedOverrun)}`}
-            {budget.fixedOverrun < -0.005 &&
-              ` + exceso recuperado ${eur(-budget.fixedOverrun)}`}
+            Ingresos {eur(budget.realIncome)} − gasto real{" "}
+            {eur(budget.realExpenses)}
+            {budget.savingsTarget > 0 &&
+              ` − ahorro ${eur(budget.savingsTarget)}`}
             {budget.carryover !== 0 &&
               ` ${budget.carryover > 0 ? "+" : "−"} arrastre ${eur(Math.abs(budget.carryover))}`}
           </p>
@@ -170,7 +162,7 @@ export default async function DashboardPage({
               {eur(budget.realExpenses)}
             </p>
             <p className="text-[10px] text-muted-foreground">
-              previsto {eur(budget.provisions)}
+              presupuesto {eur(budget.budgeted)}
             </p>
           </CardContent>
         </Card>
@@ -214,23 +206,6 @@ export default async function DashboardPage({
           </CardContent>
         </Card>
       </div>
-
-      {/* Avisos de desviación */}
-      {worstDeviations.length > 0 && (
-        <Card className="border-amber-300 dark:border-amber-800">
-          <CardContent className="flex flex-col gap-1 pt-4">
-            <p className="flex items-center gap-2 text-sm font-semibold">
-              <TriangleAlert className="size-4 text-amber-600" />
-              Conceptos gastando más de lo provisionado
-            </p>
-            {worstDeviations.map((d) => (
-              <p key={d.name} className="text-sm">
-                <strong>{d.name}</strong>: {eur(d.deviation)} este año
-              </p>
-            ))}
-          </CardContent>
-        </Card>
-      )}
 
       {/* Sectores: a dónde van los ingresos del mes */}
       {budget.realIncome > 0 && categoryRows.length > 0 && (
@@ -312,9 +287,9 @@ export default async function DashboardPage({
               </p>
             </div>
             <div className="rounded-lg bg-muted p-2">
-              <p className="text-xs text-muted-foreground">Provisiones año</p>
+              <p className="text-xs text-muted-foreground">Presupuesto año</p>
               <p className="font-semibold text-amber-600">
-                {eur(overview.totals.provisions)}
+                {eur(overview.totals.budgeted)}
               </p>
             </div>
             <div className="rounded-lg bg-muted p-2">

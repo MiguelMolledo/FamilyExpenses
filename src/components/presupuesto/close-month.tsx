@@ -28,10 +28,10 @@ export function CloseMonth({ budget }: { budget: MonthBudget }) {
       snapshot: {
         expectedIncome: budget.expectedIncome,
         realIncome: budget.realIncome,
-        provisions: budget.provisions,
+        budgeted: budget.budgeted,
+        savingsTarget: budget.savingsTarget,
         realExpenses: budget.realExpenses,
         extraExpenses: budget.extraExpenses,
-        fixedOverrun: budget.fixedOverrun,
         available: budget.available,
       },
     });
