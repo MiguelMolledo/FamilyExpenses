@@ -148,11 +148,10 @@ function parseFullSheet(rows: unknown[][]): ParsedMovement[] | null {
 
   const movements: ParsedMovement[] = [];
   for (const row of rows.slice(headerIdx + 1)) {
-    const income = row[col.income];
+    // Solo gastos: los ingresos de este formato no se importan
     const expense = row[col.expense];
-    const isIncome = typeof income === "number" && income !== 0;
     const isExpense = typeof expense === "number" && expense !== 0;
-    if (!isIncome && !isExpense) continue;
+    if (!isExpense) continue;
 
     const concept = String(row[col.concept] ?? "");
     // En tarjeta, el concepto trae la fecha real de la compra como prefijo;
@@ -185,8 +184,8 @@ function parseFullSheet(rows: unknown[][]): ParsedMovement[] | null {
     movements.push({
       date,
       description,
-      amount: Math.abs(isIncome ? (income as number) : (expense as number)),
-      type: isExpense ? "expense" : "income",
+      amount: Math.abs(expense),
+      type: "expense",
     });
   }
   return movements;
