@@ -8,6 +8,7 @@ import {
   monthEnd,
 } from "@/lib/budget";
 import { monthStart, eur, type Category } from "@/lib/types";
+import { MonthNav } from "@/components/movimientos/month-nav";
 import { YearChart } from "@/components/dashboard/year-chart";
 import { ExpenseDistribution } from "@/components/dashboard/expense-distribution";
 import { IncomeAllocation } from "@/components/dashboard/income-allocation";
@@ -23,9 +24,16 @@ import {
 import { PiggyBank, TriangleAlert, TrendingUp, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mes?: string }>;
+}) {
   const supabase = await createClient();
-  const month = monthStart(new Date());
+  const { mes } = await searchParams;
+  const month = /^\d{4}-\d{2}-01$/.test(mes ?? "")
+    ? mes!
+    : monthStart(new Date());
   const year = Number(month.slice(0, 4));
   const monthIdx = Number(month.slice(5, 7)) - 1; // 0-based
 
@@ -101,9 +109,9 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">
-        Hola 👋 <span className="capitalize">{monthLabel}</span> {year}
-      </h1>
+      <h1 className="text-xl font-semibold">Hola 👋</h1>
+
+      <MonthNav month={month} base="/" />
 
       {/* Disponible este mes */}
       <Card
