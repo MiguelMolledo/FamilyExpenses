@@ -203,12 +203,15 @@ export default function ImportarPage() {
                     />
                     <Select
                       value={row.category_id ?? ""}
-                      items={Object.fromEntries(
-                        (row.type === "expense"
-                          ? expenseCategories
-                          : incomeCategories
-                        ).map((c) => [c.id, c.name])
-                      )}
+                      items={{
+                        "": "Sin categoría",
+                        ...Object.fromEntries(
+                          (row.type === "expense"
+                            ? expenseCategories
+                            : incomeCategories
+                          ).map((c) => [c.id, c.name])
+                        ),
+                      }}
                       onValueChange={(v) =>
                         update(i, { category_id: v || null })
                       }
@@ -217,6 +220,7 @@ export default function ImportarPage() {
                         <SelectValue placeholder="Sin categoría" />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="">Sin categoría</SelectItem>
                         {(row.type === "expense"
                           ? expenseCategories
                           : incomeCategories
@@ -246,9 +250,12 @@ export default function ImportarPage() {
                     <div className="flex items-center gap-2 pl-7">
                       <Select
                         value={row.recurring_expense_id ?? ""}
-                        items={Object.fromEntries(
-                          fijosForRow(fijos, row).map((f) => [f.id, f.name])
-                        )}
+                        items={{
+                          "": "Sin gasto fijo (cuenta como extra)",
+                          ...Object.fromEntries(
+                            fijosForRow(fijos, row).map((f) => [f.id, f.name])
+                          ),
+                        }}
                         onValueChange={(v) =>
                           update(i, { recurring_expense_id: v || null })
                         }
@@ -257,6 +264,9 @@ export default function ImportarPage() {
                           <SelectValue placeholder="Sin gasto fijo (cuenta como extra)" />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="">
+                            Sin gasto fijo (cuenta como extra)
+                          </SelectItem>
                           {fijosForRow(fijos, row).map((f) => (
                             <SelectItem key={f.id} value={f.id}>
                               {f.name}
