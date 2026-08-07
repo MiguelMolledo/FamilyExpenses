@@ -73,11 +73,20 @@ export async function POST(req: Request) {
     return n === 1 ? base : `${base}#${n}`;
   });
   const today = new Date().toISOString().slice(0, 10);
-  const [rulesQ, dupQ, categoriesQ, subcategoriesQ, fijosQ] = await Promise.all([
+  // Todo lo ya guardado en el rango de fechas del extracto: sirve para el
+  // duplicado exacto (misma huella) y para el blando (misma fecha+importe+tipo
+  // con otro texto, p.ej. el mismo recibo en el Excel corto y el largo).
+  const minDate = movements.reduce((a, m) => (m.date < a ? m.date : a), "9999");
+  const maxDate = movements.reduce((a, m) => (m.date > a ? m.date : a), "0000");
+  const [rulesQ, rangeQ, categoriesQ, subcategoriesQ, fijosQ] = await Promise.all([
     supabase
       .from("category_rules")
       .select("pattern, category_id, subcategory_id"),
-    supabase.from("transactions").select("dedup_hash").in("dedup_hash", hashes),
+    supabase
+      .from("transactions")
+      .select("date, amount, type, dedup_hash")
+      .gte("date", minDate)
+      .lte("date", maxDate),
     supabase.from("categories").select("id, name, kind"),
     supabase.from("subcategories").select("id, category_id, name, kind"),
     supabase
@@ -90,7 +99,27 @@ export async function POST(req: Request) {
   const rules = (rulesQ.data ?? []).sort(
     (a, b) => b.pattern.length - a.pattern.length
   );
-  const existing = new Set((dupQ.data ?? []).map((d) => d.dedup_hash));
+  const stored = rangeQ.data ?? [];
+  const existing = new Set(stored.map((d) => d.dedup_hash).filter(Boolean));
+  // Ocurrencias por fecha+importe+tipo, para el duplicado blando. Cada
+  // coincidencia consume una: si hay 3 cafés de 2€ guardados y el extracto
+  // trae 4, solo 3 se marcan como posibles duplicados.
+  const softKey = (date: string, amount: number, type: string) =>
+    `${date}|${amount.toFixed(2)}|${type}`;
+  const softCount = new Map<string, number>();
+  for (const t of stored) {
+    const k = softKey(t.date, Number(t.amount), t.type);
+    softCount.set(k, (softCount.get(k) ?? 0) + 1);
+  }
+  // Los duplicados exactos consumen primero su ocurrencia
+  const exactDup = movements.map((m, i) => {
+    const isDup = existing.has(hashes[i]);
+    if (isDup) {
+      const k = softKey(m.date, m.amount, m.type);
+      softCount.set(k, (softCount.get(k) ?? 0) - 1);
+    }
+    return isDup;
+  });
   const categories = categoriesQ.data ?? [];
   const subcategories = subcategoriesQ.data ?? [];
   const fijos = fijosQ.data ?? [];
@@ -106,10 +135,21 @@ export async function POST(req: Request) {
     const sub = rule?.subcategory_id
       ? subById.get(rule.subcategory_id)
       : undefined;
-    const duplicate = existing.has(hashes[i]);
+    let duplicate = exactDup[i];
+    if (!duplicate) {
+      // Duplicado blando: ya hay un movimiento guardado ese día con el mismo
+      // importe y tipo (con otro texto). Se desmarca y el usuario decide.
+      const k = softKey(m.date, m.amount, m.type);
+      const left = softCount.get(k) ?? 0;
+      if (left > 0) {
+        duplicate = true;
+        softCount.set(k, left - 1);
+      }
+    }
     return {
       ...m,
       dedup_hash: hashes[i],
+      exact_duplicate: exactDup[i],
       category_id: sub?.category_id ?? rule?.category_id ?? null,
       subcategory_id: rule?.subcategory_id ?? null,
       is_fixed:

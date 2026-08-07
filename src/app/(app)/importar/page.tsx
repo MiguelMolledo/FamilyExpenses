@@ -23,6 +23,8 @@ type Row = {
   is_fixed: boolean;
   dedup_hash: string;
   duplicate: boolean;
+  /** misma huella exacta; si no, coincide fecha+importe con otro texto */
+  exact_duplicate?: boolean;
   checked: boolean;
   ai?: boolean;
 };
@@ -252,8 +254,15 @@ export default function ImportarPage() {
                       <Badge
                         variant="destructive"
                         className="shrink-0 text-[10px]"
+                        title={
+                          row.exact_duplicate
+                            ? "Ya está importado (misma fecha, importe y concepto)"
+                            : "Ya hay un movimiento ese día con el mismo importe (con otro texto)"
+                        }
                       >
-                        posible duplicado
+                        {row.exact_duplicate
+                          ? "ya importado"
+                          : "posible duplicado"}
                       </Badge>
                     )}
                     {row.ai && (
