@@ -11,6 +11,7 @@ import {
   PawPrint,
   FileUp,
   Settings,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -28,6 +29,7 @@ const tabs = [
 ];
 
 const moreItems = [
+  { href: "/paga", label: "Mi dinero", icon: Wallet },
   { href: "/mascotas", label: "Mascotas", icon: PawPrint },
   { href: "/importar", label: "Importar PDF", icon: FileUp },
   { href: "/ajustes", label: "Ajustes", icon: Settings },
