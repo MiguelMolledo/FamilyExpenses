@@ -38,6 +38,31 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  // Unidad de entrada por campo: se guarda siempre en €/mes, pero puedes
+  // teclear el importe anual (p.ej. gasoil 2500€/año) y se divide entre 12.
+  const [units, setUnits] = useState<Record<string, "month" | "year">>({});
+
+  const toMonthly = (id: string, raw: string): string => {
+    if (raw.trim() === "" || units[id] !== "year") return raw;
+    const n = Number(raw);
+    return Number.isFinite(n) ? (n / 12).toFixed(2) : raw;
+  };
+
+  const UnitToggle = ({ id }: { id: string }) => (
+    <button
+      type="button"
+      className="shrink-0 rounded-md border px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-muted"
+      title="Cambia si el importe que escribes es mensual o anual (se guarda al mes)"
+      onClick={() =>
+        setUnits((p) => ({
+          ...p,
+          [id]: (p[id] ?? "month") === "month" ? "year" : "month",
+        }))
+      }
+    >
+      {(units[id] ?? "month") === "month" ? "€/mes" : "€/año ÷12"}
+    </button>
+  );
 
   async function saveBudget(categoryId: string, raw: string) {
     const value = raw.trim() === "" ? null : Number(raw);
@@ -109,11 +134,16 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
                   )}
                   {r.category.name}
                 </button>
+                <UnitToggle id={r.category.id} />
                 <Input
                   type="number"
                   inputMode="decimal"
                   min="0"
-                  placeholder="€/mes"
+                  placeholder={
+                    (units[r.category.id] ?? "month") === "month"
+                      ? "€/mes"
+                      : "€/año"
+                  }
                   className="h-8 w-24 text-right text-sm"
                   defaultValue={r.budget ?? ""}
                   key={`${r.category.id}-${r.budget ?? ""}`}
@@ -123,7 +153,7 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
                   onBlur={() => {
                     const d = drafts[r.category.id];
                     if (d !== undefined && d !== String(r.budget ?? ""))
-                      saveBudget(r.category.id, d);
+                      saveBudget(r.category.id, toMonthly(r.category.id, d));
                   }}
                 />
               </div>
@@ -191,26 +221,29 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
                       </span>
                       <span className="text-muted-foreground">{eur(spent)}</span>
                       {sub.kind === "expense" && (
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          min="0"
-                          placeholder="—"
-                          className="h-7 w-20 text-right text-xs"
-                          defaultValue={sub.monthly_budget ?? ""}
-                          key={`${sub.id}-${sub.monthly_budget ?? ""}`}
-                          onChange={(e) =>
-                            setDrafts((p) => ({ ...p, [sub.id]: e.target.value }))
-                          }
-                          onBlur={() => {
-                            const d = drafts[sub.id];
-                            if (
-                              d !== undefined &&
-                              d !== String(sub.monthly_budget ?? "")
-                            )
-                              saveSubBudget(sub.id, d);
-                          }}
-                        />
+                        <>
+                          <UnitToggle id={sub.id} />
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            placeholder="—"
+                            className="h-7 w-20 text-right text-xs"
+                            defaultValue={sub.monthly_budget ?? ""}
+                            key={`${sub.id}-${sub.monthly_budget ?? ""}`}
+                            onChange={(e) =>
+                              setDrafts((p) => ({ ...p, [sub.id]: e.target.value }))
+                            }
+                            onBlur={() => {
+                              const d = drafts[sub.id];
+                              if (
+                                d !== undefined &&
+                                d !== String(sub.monthly_budget ?? "")
+                              )
+                                saveSubBudget(sub.id, toMonthly(sub.id, d));
+                            }}
+                          />
+                        </>
                       )}
                     </div>
                   ))}
