@@ -1,9 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import {
+  getCategoryBudgets,
   getMonthBudget,
   getSuggestions,
   getYearDeviations,
 } from "@/lib/budget";
+import { CategoryBudgets } from "@/components/presupuesto/category-budgets";
 import { monthStart, eur } from "@/lib/types";
 import { RecurringExpenses } from "@/components/presupuesto/recurring-expenses";
 import { RecurringIncomes } from "@/components/presupuesto/recurring-incomes";
@@ -17,6 +19,7 @@ export default async function PresupuestoPage() {
   const month = monthStart(new Date());
   const [
     budget,
+    categoryBudgets,
     suggestions,
     deviations,
     categoriesQ,
@@ -26,6 +29,7 @@ export default async function PresupuestoPage() {
   ] =
     await Promise.all([
       getMonthBudget(supabase, month),
+      getCategoryBudgets(supabase, month),
       getSuggestions(supabase, month),
       getYearDeviations(supabase, month),
       supabase.from("categories").select("*").order("name"),
@@ -72,6 +76,8 @@ export default async function PresupuestoPage() {
           </div>
         </CardContent>
       </Card>
+
+      <CategoryBudgets rows={categoryBudgets.rows} />
 
       <Suggestions suggestions={suggestions} />
 

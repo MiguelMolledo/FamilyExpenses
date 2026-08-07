@@ -112,6 +112,26 @@ export type SavingsPlan = {
   monthly_target: number;
 };
 
+export type PersonalAllowance = {
+  id: string;
+  family_id: string;
+  profile_id: string;
+  amount: number;
+  starts_on: string;
+  ends_on: string | null;
+};
+
+export type PersonalMovement = {
+  id: string;
+  family_id: string;
+  profile_id: string;
+  date: string;
+  /** firmado: gasto negativo, extra positivo, ajuste con su signo */
+  amount: number;
+  kind: "expense" | "extra" | "adjustment";
+  note: string | null;
+};
+
 export type MonthClosure = {
   family_id: string;
   month: string;
