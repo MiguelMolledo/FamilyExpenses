@@ -66,23 +66,30 @@ export function parseCaixabankText(text: string): ParsedMovement[] {
   return movements;
 }
 
+const normCell = (s: unknown) =>
+  String(s ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim();
+
 /**
- * Parser del export Excel "Movimientos de la cuenta" de CaixaBank (.xls).
- * Cabecera esperada: Fecha | Fecha valor | Movimiento | Más datos | Importe.
- * Fechas como serial de Excel, importes numéricos con signo.
+ * Parser de los exports Excel de CaixaBank (.xls). Hay dos formatos:
+ * - Corto (rangos recientes): Fecha | Fecha valor | Movimiento | Más datos | Importe.
+ * - Largo (rangos amplios): Número de cuenta | Oficina | ... | Ingreso (+) |
+ *   Gasto (-) | Saldos | Conceptos complementarios 1-10. De este solo se
+ *   extraen fecha, concepto e importe; cuenta, saldos y referencias se descartan.
  */
 export function parseCaixabankSheet(rows: unknown[][]): ParsedMovement[] {
-  const norm = (s: unknown) =>
-    String(s ?? "")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
-      .trim();
+  return parseShortSheet(rows) ?? parseFullSheet(rows) ?? [];
+}
 
+function parseShortSheet(rows: unknown[][]): ParsedMovement[] | null {
+  const norm = normCell;
   const headerIdx = rows.findIndex(
     (r) => r.some((c) => norm(c) === "fecha") && r.some((c) => norm(c) === "importe")
   );
-  if (headerIdx === -1) return [];
+  if (headerIdx === -1) return null;
 
   const header = rows[headerIdx].map(norm);
   const col = {
@@ -91,7 +98,7 @@ export function parseCaixabankSheet(rows: unknown[][]): ParsedMovement[] {
     extra: header.indexOf("mas datos"),
     amount: header.indexOf("importe"),
   };
-  if (col.description === -1 || col.amount === -1) return [];
+  if (col.description === -1 || col.amount === -1) return null;
 
   const movements: ParsedMovement[] = [];
   for (const row of rows.slice(headerIdx + 1)) {
@@ -113,6 +120,73 @@ export function parseCaixabankSheet(rows: unknown[][]): ParsedMovement[] {
       description,
       amount: Math.abs(value),
       type: value < 0 ? "expense" : "income",
+    });
+  }
+  return movements;
+}
+
+const OP_DATE_RE = /fecha de operaci[oó]n:?\s*(\d{2})-(\d{2})-(\d{4})/i;
+
+function parseFullSheet(rows: unknown[][]): ParsedMovement[] | null {
+  const norm = normCell;
+  const headerIdx = rows.findIndex(
+    (r) =>
+      r.some((c) => norm(c) === "f. operacion") &&
+      r.some((c) => norm(c) === "ingreso (+)")
+  );
+  if (headerIdx === -1) return null;
+
+  const header = rows[headerIdx].map(norm);
+  const col = {
+    date: header.indexOf("f. operacion"),
+    income: header.indexOf("ingreso (+)"),
+    expense: header.indexOf("gasto (-)"),
+    concept: header.indexOf("concepto complementario 1"),
+    operation: header.indexOf("concepto complementario 9"),
+  };
+  if (col.income === -1 || col.expense === -1 || col.concept === -1) return null;
+
+  const movements: ParsedMovement[] = [];
+  for (const row of rows.slice(headerIdx + 1)) {
+    const income = row[col.income];
+    const expense = row[col.expense];
+    const isIncome = typeof income === "number" && income !== 0;
+    const isExpense = typeof expense === "number" && expense !== 0;
+    if (!isIncome && !isExpense) continue;
+
+    const concept = String(row[col.concept] ?? "");
+    // En tarjeta, el concepto trae la fecha real de la compra como prefijo;
+    // manda sobre la contable y se quita de la descripción.
+    const opDate = concept.match(OP_DATE_RE);
+    const date = opDate
+      ? toIsoDate(opDate[1], opDate[2], opDate[3])
+      : excelDateToIso(row[col.date]);
+    if (!date) continue;
+
+    // Descripción sin referencias: fuera cualquier token con 6+ dígitos
+    // (contratos, pólizas, recibos) — es lo único que sale hacia la IA.
+    let description = concept
+      .replace(OP_DATE_RE, "")
+      .split(/\s+/)
+      .filter((t) => (t.match(/\d/g)?.length ?? 0) < 6)
+      .join(" ")
+      .trim();
+    if (!description) {
+      // Sin comercio/beneficiario: etiqueta del tipo de operación
+      // ("04400069PRS  VTO. PRESTAMO" → "VTO. PRESTAMO")
+      description = String(row[col.operation] ?? "")
+        .trim()
+        .replace(/^\S+\s+/, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+    if (!description) continue;
+
+    movements.push({
+      date,
+      description,
+      amount: Math.abs(isIncome ? (income as number) : (expense as number)),
+      type: isExpense ? "expense" : "income",
     });
   }
   return movements;
