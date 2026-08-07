@@ -8,7 +8,12 @@ import {
 } from "ai";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { getMonthBudget, addMonths, monthEnd } from "@/lib/budget";
+import {
+  getCategoryBudgets,
+  getMonthBudget,
+  addMonths,
+  monthEnd,
+} from "@/lib/budget";
 import { monthStart } from "@/lib/types";
 
 export const maxDuration = 60;
@@ -29,12 +34,13 @@ export async function POST(req: Request) {
   const month = monthStart(new Date());
 
   // Contexto de la familia para que el modelo resuelva nombres sin adivinar
-  const [categoriesQ, recurringExpQ, recurringIncQ, petsQ, profilesQ] =
+  const [categoriesQ, subcategoriesQ, recurringExpQ, recurringIncQ, petsQ, profilesQ] =
     await Promise.all([
       supabase.from("categories").select("id, name, kind"),
+      supabase.from("subcategories").select("id, category_id, name, kind"),
       supabase
         .from("recurring_expenses")
-        .select("id, name, amount, period")
+        .select("id, name, amount, period, category_id, subcategory_id")
         .lte("starts_on", monthEnd(month))
         .or(`ends_on.is.null,ends_on.gte.${month}`),
       supabase
@@ -47,6 +53,7 @@ export async function POST(req: Request) {
     ]);
 
   const categories = categoriesQ.data ?? [];
+  const subcategories = subcategoriesQ.data ?? [];
   const recurringExpenses = recurringExpQ.data ?? [];
   const recurringIncomes = recurringIncQ.data ?? [];
   const pets = petsQ.data ?? [];
@@ -55,6 +62,15 @@ export async function POST(req: Request) {
   const findCategory = (name?: string) =>
     name
       ? categories.find((c) => c.name.toLowerCase() === name.toLowerCase())
+      : undefined;
+  // Subcategoría dentro de la categoría dada (o en cualquiera si no se indica)
+  const findSubcategory = (subName?: string, categoryId?: string) =>
+    subName
+      ? subcategories.find(
+          (s) =>
+            s.name.toLowerCase() === subName.toLowerCase() &&
+            (!categoryId || s.category_id === categoryId)
+        )
       : undefined;
   const findRecurringExpense = (name?: string) =>
     name
@@ -68,15 +84,28 @@ export async function POST(req: Request) {
 Hoy es ${today}. El mes actual es ${month.slice(0, 7)}.
 
 Datos de la familia:
-- Categorías: ${categories.map((c) => c.name).join(", ") || "ninguna"}
-- Gastos fijos activos: ${recurringExpenses.map((r) => `${r.name} (${r.amount}€/${r.period === "annual" ? "año" : "mes"})`).join(", ") || "ninguno"}
+- Taxonomía (los movimientos se asignan a Categoría › Subcategoría; el tipo va entre paréntesis): ${categories
+    .map((c) => {
+      const subs = subcategories.filter((s) => s.category_id === c.id);
+      return `${c.name}: ${subs
+        .map((s) => `${s.name}${s.kind === "income" ? " (ingreso)" : ""}`)
+        .join(", ")}`;
+    })
+    .join(" | ") || "ninguna"}
+- Gastos fijos dados de alta (recibos previstos): ${recurringExpenses.map((r) => `${r.name} (${r.amount}€/${r.period === "annual" ? "año" : "mes"})`).join(", ") || "ninguno"}
 - Ingresos recurrentes: ${recurringIncomes.map((r) => `${r.name} (${r.amount}€/mes)`).join(", ") || "ninguno"}
 - Mascotas: ${pets.map((p) => `${p.name} (${p.default_split_pct}%)`).join(", ") || "ninguna"}
 - Miembros: ${profiles.map((p) => p.display_name).join(", ")}
 
+Modelo de presupuesto:
+- El presupuesto vive en la categoría; TODO gasto de la categoría descuenta de él, sea fijo o variable.
+- is_fixed=true solo marca que es un recibo recurrente planificado (hipoteca, suscripción, seguro…): sirve para comparar lo previsto con lo pagado, no cambia el presupuesto. Una cena o una compra puntual es is_fixed=false aunque su categoría tenga fijos.
+- Las categorías con sobrante "acumula" arrastran lo no gastado del año; consulta get_category_budgets para saldos.
+- Los traspasos entre cuentas propias van en la categoría Traspaso y no cuentan como gasto ni ingreso.
+
 Reglas:
 - Usa las tools para leer o modificar datos. No inventes cifras.
-- Al añadir un gasto, elige la categoría más adecuada de la lista. Si el usuario menciona un gasto fijo existente (ej. "la factura del gas"), ligalo con recurring_expense_name.
+- Al añadir un movimiento, elige categoría Y subcategoría de la taxonomía (respeta el tipo). Marca is_fixed solo si es un recibo previsto.
 - Si el gasto es de las mascotas, usa pet_split=true para repartirlo con sus porcentajes.
 - Tras ejecutar una tool, confirma en una frase qué has hecho, con el importe.`;
 
@@ -90,18 +119,19 @@ Reglas:
     tools: {
       add_expense: tool({
         description:
-          "Añade un gasto real. Si corresponde a un gasto fijo (gas, luz...), pasa recurring_expense_name. Si es de mascotas, pet_split=true.",
+          "Añade un gasto real con categoría y subcategoría. is_fixed=true solo si es un recibo recurrente planificado. Si es de mascotas, pet_split=true.",
         inputSchema: z.object({
           amount: z.number().positive(),
           description: z.string().default(""),
           date: z.string().describe("YYYY-MM-DD, por defecto hoy").default(today),
           category_name: z.string().optional(),
-          recurring_expense_name: z.string().optional(),
+          subcategory_name: z.string().optional(),
+          is_fixed: z.boolean().default(false),
           pet_split: z.boolean().default(false),
         }),
         execute: async (input) => {
           const category = findCategory(input.category_name);
-          const recurring = findRecurringExpense(input.recurring_expense_name);
+          const sub = findSubcategory(input.subcategory_name, category?.id);
           const { data, error } = await supabase
             .from("transactions")
             .insert({
@@ -109,8 +139,9 @@ Reglas:
               description: input.description,
               date: input.date,
               type: "expense",
-              category_id: category?.id ?? null,
-              recurring_expense_id: recurring?.id ?? null,
+              category_id: category?.id ?? sub?.category_id ?? null,
+              subcategory_id: sub?.id ?? null,
+              is_fixed: input.is_fixed,
             })
             .select("id")
             .single();
@@ -142,6 +173,11 @@ Reglas:
           date: z.string().default(today),
           member_name: z.string().optional(),
           recurring_income_name: z.string().optional(),
+          category_name: z
+            .string()
+            .optional()
+            .describe("p.ej. Trabajo, Piso o Traspaso"),
+          subcategory_name: z.string().optional().describe("p.ej. Ingresos"),
         }),
         execute: async (input) => {
           const profile = input.member_name
@@ -158,11 +194,15 @@ Reglas:
                   input.recurring_income_name!.toLowerCase()
               )
             : undefined;
+          const category = findCategory(input.category_name);
+          const sub = findSubcategory(input.subcategory_name, category?.id);
           const { error } = await supabase.from("transactions").insert({
             amount: input.amount,
             description: input.description,
             date: input.date,
             type: "income",
+            category_id: category?.id ?? sub?.category_id ?? null,
+            subcategory_id: sub?.id ?? null,
             recurring_income_id: recurring?.id ?? null,
             profile_id: profile?.user_id ?? null,
             is_extraordinary: !recurring,
@@ -179,14 +219,17 @@ Reglas:
           amount: z.number().positive(),
           period: z.enum(["monthly", "annual"]),
           category_name: z.string().optional(),
+          subcategory_name: z.string().optional(),
         }),
         execute: async (input) => {
           const category = findCategory(input.category_name);
+          const sub = findSubcategory(input.subcategory_name, category?.id);
           const { error } = await supabase.from("recurring_expenses").insert({
             name: input.name,
             amount: input.amount,
             period: input.period,
-            category_id: category?.id ?? null,
+            category_id: category?.id ?? sub?.category_id ?? null,
+            subcategory_id: sub?.id ?? null,
             starts_on: month,
           });
           return error ? { error: error.message } : { ok: true };
@@ -222,7 +265,10 @@ Reglas:
             name: current.name,
             amount: input.new_amount,
             period,
+            category_id: current.category_id,
+            subcategory_id: current.subcategory_id,
             starts_on: addMonths(month, 1),
+            supersedes_id: current.id,
           });
           return error ? { error: error.message } : { ok: true };
         },
@@ -283,6 +329,34 @@ Reglas:
         },
       }),
 
+      get_category_budgets: tool({
+        description:
+          "Presupuesto por categoría del mes: presupuestado, gastado (y cuánto en fijos), disponible y saldo acumulado del año; incluye la capacidad de reacción (gasto en categorías recortables).",
+        inputSchema: z.object({
+          month: z
+            .string()
+            .describe("YYYY-MM-01, por defecto el mes actual")
+            .default(month),
+        }),
+        execute: async (input) => {
+          const b = await getCategoryBudgets(supabase, input.month);
+          return {
+            categorias: b.rows.map((r) => ({
+              categoria: r.category.name,
+              presupuesto: r.budget,
+              gastado: r.spent,
+              en_fijos: r.fixedSpent,
+              disponible: r.available,
+              acumulado_del_año: r.accumulated,
+              recortable: r.category.is_flexible,
+              sobrante: r.category.rollover,
+            })),
+            gasto_total: b.totalSpent,
+            gasto_recortable: b.flexibleSpent,
+          };
+        },
+      }),
+
       query_transactions: tool({
         description:
           "Busca movimientos con filtros: rango de fechas, categoría, texto o tipo.",
@@ -290,24 +364,36 @@ Reglas:
           from: z.string().describe("YYYY-MM-DD").default(month),
           to: z.string().describe("YYYY-MM-DD").default(monthEnd(month)),
           category_name: z.string().optional(),
+          subcategory_name: z.string().optional(),
+          only_fixed: z
+            .boolean()
+            .optional()
+            .describe("true = solo recibos fijos, false = solo variables"),
           text: z.string().optional(),
           type: z.enum(["expense", "income"]).optional(),
         }),
         execute: async (input) => {
           let q = supabase
             .from("transactions")
-            .select("date, amount, type, description, category_id")
+            .select(
+              "date, amount, type, description, category_id, subcategory_id, is_fixed"
+            )
             .gte("date", input.from)
             .lte("date", input.to)
             .order("date", { ascending: false })
             .limit(100);
           const category = findCategory(input.category_name);
           if (category) q = q.eq("category_id", category.id);
+          const sub = findSubcategory(input.subcategory_name, category?.id);
+          if (sub) q = q.eq("subcategory_id", sub.id);
+          if (input.only_fixed !== undefined)
+            q = q.eq("is_fixed", input.only_fixed);
           if (input.type) q = q.eq("type", input.type);
           if (input.text) q = q.ilike("description", `%${input.text}%`);
           const { data, error } = await q;
           if (error) return { error: error.message };
           const catName = new Map(categories.map((c) => [c.id, c.name]));
+          const subName = new Map(subcategories.map((s) => [s.id, s.name]));
           return {
             total: (data ?? []).reduce((s, t) => s + Number(t.amount), 0),
             movimientos: (data ?? []).map((t) => ({
@@ -316,6 +402,8 @@ Reglas:
               tipo: t.type,
               descripcion: t.description,
               categoria: catName.get(t.category_id ?? "") ?? null,
+              subcategoria: subName.get(t.subcategory_id ?? "") ?? null,
+              fijo: t.is_fixed,
             })),
           };
         },
