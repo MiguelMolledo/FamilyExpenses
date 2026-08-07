@@ -1,22 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { FileUp, Loader2, Sparkles } from "lucide-react";
-import { eur, type Category } from "@/lib/types";
+import { eur, type Category, type Subcategory } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { CategorySubcategorySelect } from "@/components/category-select";
 import { cn } from "@/lib/utils";
 
 type Row = {
@@ -25,37 +19,64 @@ type Row = {
   amount: number;
   type: "expense" | "income";
   category_id: string | null;
-  recurring_expense_id: string | null;
+  subcategory_id: string | null;
+  is_fixed: boolean;
   dedup_hash: string;
   duplicate: boolean;
   checked: boolean;
   ai?: boolean;
 };
 
-type Fijo = { id: string; name: string; category_id: string | null };
+type Draft = {
+  rows: Row[];
+  categories: Category[];
+  subcategories: Subcategory[];
+  fileName: string;
+};
 
-/**
- * Fijos elegibles para una fila: si tiene categoría, solo los de esa categoría
- * (más los que no tienen ninguna). El fijo ya seleccionado se muestra siempre.
- */
-function fijosForRow(fijos: Fijo[], row: Row): Fijo[] {
-  if (!row.category_id) return fijos;
-  return fijos.filter(
-    (f) =>
-      f.category_id === row.category_id ||
-      f.category_id === null ||
-      f.id === row.recurring_expense_id
-  );
-}
+// El borrador sobrevive a la navegación: se guarda en localStorage y se
+// restaura al volver. Se limpia al importar o al cancelar.
+const DRAFT_KEY = "import-draft";
 
 export default function ImportarPage() {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [fijos, setFijos] = useState<Fijo[]>([]);
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [fileName, setFileName] = useState("");
   const [parsing, setParsing] = useState(false);
   const [committing, setCommitting] = useState(false);
+  const [restored, setRestored] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw) as Draft;
+        if (draft.rows?.length > 0) {
+          setRows(draft.rows);
+          setCategories(draft.categories ?? []);
+          setSubcategories(draft.subcategories ?? []);
+          setFileName(draft.fileName ?? "");
+        }
+      }
+    } catch {
+      localStorage.removeItem(DRAFT_KEY);
+    }
+    setRestored(true);
+  }, []);
+
+  useEffect(() => {
+    if (!restored) return;
+    if (rows.length === 0) {
+      localStorage.removeItem(DRAFT_KEY);
+      return;
+    }
+    localStorage.setItem(
+      DRAFT_KEY,
+      JSON.stringify({ rows, categories, subcategories, fileName } satisfies Draft)
+    );
+  }, [restored, rows, categories, subcategories, fileName]);
 
   async function onFile(file: File) {
     setParsing(true);
@@ -69,12 +90,18 @@ export default function ImportarPage() {
     if (data.warning) toast.warning(data.warning);
     setRows(data.rows ?? []);
     setCategories(data.categories ?? []);
-    setFijos(data.fijos ?? []);
+    setSubcategories(data.subcategories ?? []);
     setFileName(data.fileName ?? file.name);
   }
 
   function update(i: number, patch: Partial<Row>) {
     setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  }
+
+  function cancel() {
+    setRows([]);
+    localStorage.removeItem(DRAFT_KEY);
+    toast.info("Import cancelado, no se ha guardado nada");
   }
 
   const selected = rows.filter((r) => r.checked);
@@ -92,7 +119,8 @@ export default function ImportarPage() {
           amount: r.amount,
           type: r.type,
           category_id: r.category_id,
-          recurring_expense_id: r.recurring_expense_id,
+          subcategory_id: r.subcategory_id,
+          is_fixed: r.is_fixed,
           dedup_hash: r.dedup_hash,
         })),
       }),
@@ -105,60 +133,66 @@ export default function ImportarPage() {
         (data.skipped > 0 ? ` (${data.skipped} saltados)` : "")
     );
     setRows([]);
+    localStorage.removeItem(DRAFT_KEY);
     router.refresh();
   }
-
-  const expenseCategories = categories.filter((c) => c.kind === "expense");
-  const incomeCategories = categories.filter((c) => c.kind === "income");
 
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">Importar extracto</h1>
 
-      <Card>
-        <CardContent className="pt-6">
-          <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed p-6 text-center">
-            {parsing ? (
-              <Loader2 className="size-8 animate-spin text-muted-foreground" />
-            ) : (
-              <FileUp className="size-8 text-muted-foreground" />
-            )}
-            <span className="text-sm font-medium">
-              {parsing
-                ? "Analizando extracto…"
-                : "Sube el PDF o Excel de CaixaBank"}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              Se procesa en tu servidor. Solo los conceptos sin regla aprendida
-              se envían a la IA para sugerir categoría y gasto fijo (nunca
-              importes ni fechas).
-            </span>
-            <input
-              type="file"
-              accept="application/pdf,.xls,.xlsx"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) onFile(f);
-                e.target.value = "";
-              }}
-            />
-          </label>
-        </CardContent>
-      </Card>
+      {rows.length === 0 && (
+        <Card>
+          <CardContent className="pt-6">
+            <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed p-6 text-center">
+              {parsing ? (
+                <Loader2 className="size-8 animate-spin text-muted-foreground" />
+              ) : (
+                <FileUp className="size-8 text-muted-foreground" />
+              )}
+              <span className="text-sm font-medium">
+                {parsing
+                  ? "Analizando extracto…"
+                  : "Sube el PDF o Excel de CaixaBank"}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Se procesa en tu servidor. Solo los conceptos sin regla
+                aprendida se envían a la IA para sugerir categoría y
+                subcategoría (nunca importes ni fechas).
+              </span>
+              <input
+                type="file"
+                accept="application/pdf,.xls,.xlsx"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) onFile(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </CardContent>
+        </Card>
+      )}
 
       {rows.length > 0 && (
         <>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <p className="text-sm text-muted-foreground">
+              {fileName && <span className="font-medium">{fileName}</span>} ·{" "}
               {selected.length} de {rows.length} seleccionados
             </p>
-            <Button
-              onClick={commit}
-              disabled={committing || selected.length === 0}
-            >
-              {committing ? "Importando…" : `Importar ${selected.length}`}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={cancel} disabled={committing}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={commit}
+                disabled={committing || selected.length === 0}
+              >
+                {committing ? "Importando…" : `Importar ${selected.length}`}
+              </Button>
+            </div>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -201,36 +235,19 @@ export default function ImportarPage() {
                       onChange={(e) => update(i, { date: e.target.value })}
                       className="h-8 w-36 text-xs"
                     />
-                    <Select
-                      value={row.category_id ?? ""}
-                      items={{
-                        "": "Sin categoría",
-                        ...Object.fromEntries(
-                          (row.type === "expense"
-                            ? expenseCategories
-                            : incomeCategories
-                          ).map((c) => [c.id, c.name])
-                        ),
-                      }}
-                      onValueChange={(v) =>
-                        update(i, { category_id: v || null })
-                      }
-                    >
-                      <SelectTrigger className="h-8 flex-1 text-xs">
-                        <SelectValue placeholder="Sin categoría" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">Sin categoría</SelectItem>
-                        {(row.type === "expense"
-                          ? expenseCategories
-                          : incomeCategories
-                        ).map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex-1">
+                      <CategorySubcategorySelect
+                        categories={categories}
+                        subcategories={subcategories}
+                        kind={row.type}
+                        categoryId={row.category_id}
+                        subcategoryId={row.subcategory_id}
+                        onChange={(cat, sub) =>
+                          update(i, { category_id: cat, subcategory_id: sub })
+                        }
+                        className="h-8 flex-1 text-xs"
+                      />
+                    </div>
                     {row.duplicate && (
                       <Badge
                         variant="destructive"
@@ -246,35 +263,16 @@ export default function ImportarPage() {
                       />
                     )}
                   </div>
-                  {row.type === "expense" && fijos.length > 0 && (
-                    <div className="flex items-center gap-2 pl-7">
-                      <Select
-                        value={row.recurring_expense_id ?? ""}
-                        items={{
-                          "": "Sin gasto fijo (cuenta como extra)",
-                          ...Object.fromEntries(
-                            fijosForRow(fijos, row).map((f) => [f.id, f.name])
-                          ),
-                        }}
-                        onValueChange={(v) =>
-                          update(i, { recurring_expense_id: v || null })
+                  {row.type === "expense" && (
+                    <label className="flex items-center gap-2 pl-7 text-xs text-muted-foreground">
+                      <Checkbox
+                        checked={row.is_fixed}
+                        onCheckedChange={(c) =>
+                          update(i, { is_fixed: c === true })
                         }
-                      >
-                        <SelectTrigger className="h-8 flex-1 text-xs">
-                          <SelectValue placeholder="Sin gasto fijo (cuenta como extra)" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="">
-                            Sin gasto fijo (cuenta como extra)
-                          </SelectItem>
-                          {fijosForRow(fijos, row).map((f) => (
-                            <SelectItem key={f.id} value={f.id}>
-                              {f.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                      />
+                      Gasto fijo (recibo previsto; si no, cuenta como variable)
+                    </label>
                   )}
                 </CardContent>
               </Card>

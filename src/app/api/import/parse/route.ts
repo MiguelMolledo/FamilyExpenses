@@ -15,7 +15,8 @@ const SuggestionSchema = z.object({
     z.object({
       description: z.string(),
       category: z.string().nullable(),
-      fijo: z.string().nullable(),
+      subcategory: z.string().nullable(),
+      fijo: z.boolean(),
     })
   ),
 });
@@ -72,46 +73,49 @@ export async function POST(req: Request) {
     return n === 1 ? base : `${base}#${n}`;
   });
   const today = new Date().toISOString().slice(0, 10);
-  const [rulesQ, recurringRulesQ, dupQ, categoriesQ, fijosQ] = await Promise.all([
-    supabase.from("category_rules").select("pattern, category_id"),
-    supabase.from("recurring_rules").select("pattern, recurring_expense_id"),
+  const [rulesQ, dupQ, categoriesQ, subcategoriesQ, fijosQ] = await Promise.all([
+    supabase
+      .from("category_rules")
+      .select("pattern, category_id, subcategory_id"),
     supabase.from("transactions").select("dedup_hash").in("dedup_hash", hashes),
     supabase.from("categories").select("id, name, kind"),
+    supabase.from("subcategories").select("id, category_id, name, kind"),
     supabase
       .from("recurring_expenses")
-      .select("id, name, category_id")
+      .select("id, name, category_id, subcategory_id")
       .lte("starts_on", today)
-      .or(`ends_on.is.null,ends_on.gte.${today}`)
-      .order("name"),
+      .or(`ends_on.is.null,ends_on.gte.${today}`),
   ]);
 
-  const byLength = (a: { pattern: string }, b: { pattern: string }) =>
-    b.pattern.length - a.pattern.length;
-  const rules = (rulesQ.data ?? []).sort(byLength);
-  const recurringRules = (recurringRulesQ.data ?? []).sort(byLength);
-  const fijos = fijosQ.data ?? [];
-  const fijoIds = new Set(fijos.map((f) => f.id));
+  const rules = (rulesQ.data ?? []).sort(
+    (a, b) => b.pattern.length - a.pattern.length
+  );
   const existing = new Set((dupQ.data ?? []).map((d) => d.dedup_hash));
+  const categories = categoriesQ.data ?? [];
+  const subcategories = subcategoriesQ.data ?? [];
+  const fijos = fijosQ.data ?? [];
+  const subById = new Map(subcategories.map((s) => [s.id, s]));
+  // Subcats con algún fijo dado de alta: pista para sugerir el checkbox
+  const fixedSubIds = new Set(
+    fijos.map((f) => f.subcategory_id).filter(Boolean)
+  );
 
   const rows = movements.map((m, i) => {
     const normDesc = m.description.toLowerCase();
     const rule = rules.find((r) => normDesc.includes(r.pattern));
-    // Fijo sugerido por regla aprendida; solo si sigue vigente
-    const fijoRule =
-      m.type === "expense"
-        ? recurringRules.find(
-            (r) =>
-              normDesc.includes(r.pattern) && fijoIds.has(r.recurring_expense_id)
-          )
-        : undefined;
-    const fijo = fijos.find((f) => f.id === fijoRule?.recurring_expense_id);
+    const sub = rule?.subcategory_id
+      ? subById.get(rule.subcategory_id)
+      : undefined;
     const duplicate = existing.has(hashes[i]);
     return {
       ...m,
       dedup_hash: hashes[i],
-      // Si el fijo tiene categoría propia, esa manda sobre la regla genérica
-      category_id: fijo?.category_id ?? rule?.category_id ?? null,
-      recurring_expense_id: fijo?.id ?? null,
+      category_id: sub?.category_id ?? rule?.category_id ?? null,
+      subcategory_id: rule?.subcategory_id ?? null,
+      is_fixed:
+        m.type === "expense" &&
+        !!rule?.subcategory_id &&
+        fixedSubIds.has(rule.subcategory_id),
       duplicate,
       checked: !duplicate,
       ai: false,
@@ -122,14 +126,10 @@ export async function POST(req: Request) {
   // conocen. Las reglas siempre mandan; la IA solo rellena huecos, y lo que
   // el usuario confirme al importar se convierte en regla (la IA se usa cada
   // vez menos). Si el modelo falla, el import sigue sin sugerencias.
-  const categories = categoriesQ.data ?? [];
   const pending = [
     ...new Map(
       rows
-        .filter(
-          (r) =>
-            !r.category_id || (r.type === "expense" && !r.recurring_expense_id)
-        )
+        .filter((r) => !r.subcategory_id)
         .map((r) => [r.description, { description: r.description, type: r.type }])
     ).values(),
   ];
@@ -138,48 +138,58 @@ export async function POST(req: Request) {
       const openrouter = createOpenRouter({
         apiKey: process.env.OPENROUTER_API_KEY,
       });
+      const catById = new Map(categories.map((c) => [c.id, c.name]));
+      const taxonomy = subcategories
+        .map(
+          (s) =>
+            `${catById.get(s.category_id)} > ${s.name} (${
+              s.kind === "expense" ? "gasto" : "ingreso"
+            })`
+        )
+        .join("; ");
       const { object } = await generateObject({
         model: openrouter(process.env.OPENROUTER_MODEL ?? "openai/gpt-5.6-luna"),
         schema: SuggestionSchema,
         abortSignal: AbortSignal.timeout(30_000),
         prompt: [
           "Eres el clasificador de un app familiar de gastos en España.",
-          "Para cada concepto bancario, sugiere la categoría y, si claramente corresponde a un recibo recurrente de la lista de gastos fijos, el gasto fijo. Usa null si no hay un candidato claro; no inventes nombres fuera de las listas.",
-          `Categorías de gasto: ${categories
-            .filter((c) => c.kind === "expense")
-            .map((c) => c.name)
+          'Para cada concepto bancario, sugiere "category" y "subcategory" eligiendo un par EXACTO de la taxonomía (respeta el tipo: gasto o ingreso). Usa null si no hay un candidato claro; no inventes nombres.',
+          '"fijo" es true solo si claramente es un recibo recurrente planificado (hipoteca, suscripción, seguro, cuota…), false para gasto variable (compras, restaurantes, gasolina…).',
+          `Taxonomía (Categoría > Subcategoría (tipo)): ${taxonomy}`,
+          `Recibos fijos dados de alta (para reconocerlos): ${fijos
+            .map((f) => f.name)
             .join(", ")}`,
-          `Categorías de ingreso: ${categories
-            .filter((c) => c.kind === "income")
-            .map((c) => c.name)
-            .join(", ")}`,
-          `Gastos fijos: ${fijos.map((f) => f.name).join(", ")}`,
           `Conceptos a clasificar (tipo entre paréntesis): ${pending
             .map((p) => `"${p.description}" (${p.type})`)
             .join("; ")}`,
         ].join("\n\n"),
       });
-      const catByName = new Map(
-        categories.map((c) => [c.name.toLowerCase(), c])
-      );
-      const fijoByName = new Map(fijos.map((f) => [f.name.toLowerCase(), f]));
       const byDesc = new Map(
         object.items.map((s) => [s.description.toLowerCase(), s])
       );
+      const catByName = new Map(
+        categories.map((c) => [c.name.toLowerCase(), c])
+      );
       for (const row of rows) {
+        if (row.subcategory_id) continue;
         const s = byDesc.get(row.description.toLowerCase());
         if (!s) continue;
         const cat = s.category ? catByName.get(s.category.toLowerCase()) : null;
-        const fijoMatch =
-          row.type === "expense" && s.fijo
-            ? fijoByName.get(s.fijo.toLowerCase())
+        const sub =
+          cat && s.subcategory
+            ? subcategories.find(
+                (x) =>
+                  x.category_id === cat.id &&
+                  x.name.toLowerCase() === s.subcategory!.toLowerCase() &&
+                  x.kind === row.type
+              )
             : null;
-        if (!row.recurring_expense_id && fijoMatch) {
-          row.recurring_expense_id = fijoMatch.id;
-          row.category_id = fijoMatch.category_id ?? row.category_id;
+        if (sub) {
+          row.category_id = cat!.id;
+          row.subcategory_id = sub.id;
+          row.is_fixed = row.type === "expense" && s.fijo;
           row.ai = true;
-        }
-        if (!row.category_id && cat && cat.kind === row.type) {
+        } else if (cat && !row.category_id) {
           row.category_id = cat.id;
           row.ai = true;
         }
@@ -191,12 +201,8 @@ export async function POST(req: Request) {
 
   return Response.json({
     rows,
-    categories: categoriesQ.data ?? [],
-    fijos: fijos.map((f) => ({
-      id: f.id,
-      name: f.name,
-      category_id: f.category_id,
-    })),
+    categories,
+    subcategories,
     fileName: file.name,
   });
 }

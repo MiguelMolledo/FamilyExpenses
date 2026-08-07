@@ -12,7 +12,8 @@ const BodySchema = z.object({
         amount: z.number().positive(),
         type: z.enum(["expense", "income"]),
         category_id: z.string().uuid().nullable(),
-        recurring_expense_id: z.string().uuid().nullable().default(null),
+        subcategory_id: z.string().uuid().nullable().default(null),
+        is_fixed: z.boolean().default(false),
         dedup_hash: z.string(),
       })
     )
@@ -51,8 +52,8 @@ export async function POST(req: Request) {
       amount: row.amount,
       type: row.type,
       category_id: row.category_id,
-      recurring_expense_id:
-        row.type === "expense" ? row.recurring_expense_id : null,
+      subcategory_id: row.subcategory_id,
+      is_fixed: row.type === "expense" && row.is_fixed,
       import_batch_id: batch.id,
       dedup_hash: row.dedup_hash,
       is_extraordinary: false,
@@ -70,33 +71,24 @@ export async function POST(req: Request) {
     .update({ imported_count: imported })
     .eq("id", batch.id);
 
-  // Aprendizaje: reglas concepto→categoría y concepto→fijo para futuros
-  // imports. El patrón va sin dígitos, así "PRES.32635942287" aprende "pres"
-  // y matchea el mismo recibo aunque cambie el número.
-  const learned = new Map<string, string>();
-  const learnedFijos = new Map<string, string>();
+  // Aprendizaje: reglas concepto→categoría+subcategoría para futuros imports.
+  // El patrón va sin dígitos, así "PRES.32635942287" aprende "pres" y matchea
+  // el mismo recibo aunque cambie el número.
+  const learned = new Map<
+    string,
+    { category_id: string; subcategory_id: string | null }
+  >();
   for (const row of rows) {
     const pattern = rulePattern(row.description);
-    if (pattern.length < 4) continue;
-    if (row.category_id) learned.set(pattern, row.category_id);
-    if (row.type === "expense" && row.recurring_expense_id)
-      learnedFijos.set(pattern, row.recurring_expense_id);
+    if (pattern.length < 4 || !row.category_id) continue;
+    learned.set(pattern, {
+      category_id: row.category_id,
+      subcategory_id: row.subcategory_id,
+    });
   }
   if (learned.size > 0) {
     await supabase.from("category_rules").upsert(
-      [...learned.entries()].map(([pattern, category_id]) => ({
-        pattern,
-        category_id,
-      })),
-      { onConflict: "family_id,pattern" }
-    );
-  }
-  if (learnedFijos.size > 0) {
-    await supabase.from("recurring_rules").upsert(
-      [...learnedFijos.entries()].map(([pattern, recurring_expense_id]) => ({
-        pattern,
-        recurring_expense_id,
-      })),
+      [...learned.entries()].map(([pattern, r]) => ({ pattern, ...r })),
       { onConflict: "family_id,pattern" }
     );
   }
