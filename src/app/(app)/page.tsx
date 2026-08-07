@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import {
+  getCategoryBudgets,
   getMonthBudget,
   getYearDeviations,
   getYearOverview,
@@ -9,6 +10,8 @@ import {
 import { monthStart, eur, type Category } from "@/lib/types";
 import { YearChart } from "@/components/dashboard/year-chart";
 import { ExpenseDistribution } from "@/components/dashboard/expense-distribution";
+import { IncomeAllocation } from "@/components/dashboard/income-allocation";
+import { ReactionCapacity } from "@/components/dashboard/reaction-capacity";
 import { SavingsChart } from "@/components/dashboard/savings-chart";
 import {
   Card,
@@ -26,9 +29,10 @@ export default async function DashboardPage() {
   const year = Number(month.slice(0, 4));
   const monthIdx = Number(month.slice(5, 7)) - 1; // 0-based
 
-  const [budget, overview, deviations, savingsQ, categoriesQ] =
+  const [budget, categoryBudgets, overview, deviations, savingsQ, categoriesQ] =
     await Promise.all([
       getMonthBudget(supabase, month),
+      getCategoryBudgets(supabase, month),
       getYearOverview(supabase, year),
       getYearDeviations(supabase, month),
       supabase.from("savings_movements").select("date, amount").order("date"),
@@ -63,13 +67,19 @@ export default async function DashboardPage() {
   const expectedSavedYtd = budget.savingsTarget * (monthIdx + 1);
   const savingsAhead = savedThisYear - expectedSavedYtd;
 
-  // Desglose del mes por categoría (solo gastos)
+  // Desglose del mes por categoría (solo gastos, sin traspasos)
   const catById = new Map(
     (categoriesQ.data ?? []).map((c: Category) => [c.id, c.name])
+  );
+  const excludedCats = new Set(
+    (categoriesQ.data ?? [])
+      .filter((c: Category) => c.exclude_from_stats)
+      .map((c: Category) => c.id)
   );
   const byCategory = new Map<string, number>();
   for (const t of budget.transactions) {
     if (t.type !== "expense") continue;
+    if (t.category_id && excludedCats.has(t.category_id)) continue;
     const name = catById.get(t.category_id ?? "") ?? "Sin categoría";
     byCategory.set(name, (byCategory.get(name) ?? 0) + t.amount);
   }
@@ -195,6 +205,34 @@ export default async function DashboardPage() {
                 <strong>{d.name}</strong>: {eur(d.deviation)} este año
               </p>
             ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Sectores: a dónde van los ingresos del mes */}
+      {budget.realIncome > 0 && categoryRows.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>¿A dónde van los ingresos?</CardTitle>
+            <CardDescription>
+              Porcentaje de los {eur(budget.realIncome)} ingresados este mes que
+              va a cada categoría; lo que queda es margen.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <IncomeAllocation income={budget.realIncome} rows={categoryRows} />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Capacidad de reacción */}
+      {categoryBudgets.totalSpent > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Capacidad de reacción</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ReactionCapacity rows={categoryBudgets.rows} />
           </CardContent>
         </Card>
       )}

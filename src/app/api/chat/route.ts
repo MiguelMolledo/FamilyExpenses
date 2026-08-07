@@ -68,8 +68,7 @@ export async function POST(req: Request) {
 Hoy es ${today}. El mes actual es ${month.slice(0, 7)}.
 
 Datos de la familia:
-- Categorías de gasto: ${categories.filter((c) => c.kind === "expense").map((c) => c.name).join(", ") || "ninguna"}
-- Categorías de ingreso: ${categories.filter((c) => c.kind === "income").map((c) => c.name).join(", ") || "ninguna"}
+- Categorías: ${categories.map((c) => c.name).join(", ") || "ninguna"}
 - Gastos fijos activos: ${recurringExpenses.map((r) => `${r.name} (${r.amount}€/${r.period === "annual" ? "año" : "mes"})`).join(", ") || "ninguno"}
 - Ingresos recurrentes: ${recurringIncomes.map((r) => `${r.name} (${r.amount}€/mes)`).join(", ") || "ninguno"}
 - Mascotas: ${pets.map((p) => `${p.name} (${p.default_split_pct}%)`).join(", ") || "ninguna"}
