@@ -45,6 +45,7 @@ export function TransactionsList({
   const splitSet = new Set(splitIds);
   const [query, setQuery] = useState("");
   const [catFilter, setCatFilter] = useState("");
+  const [removing, setRemoving] = useState<string | null>(null);
 
   // Filtro por texto/categoría y agrupación alfabética por categoría
   // ("Sin categoría" al final; dentro de cada grupo, por fecha descendente)
@@ -79,11 +80,18 @@ export function TransactionsList({
   }, [transactions, query, catFilter, categories]);
 
   async function remove(id: string) {
-    const { error } = await createClient()
-      .from("transactions")
-      .delete()
-      .eq("id", id);
-    if (error) return void toast.error("No se pudo eliminar");
+    if (removing) return;
+    setRemoving(id);
+    const supabase = createClient();
+    let { error } = await supabase.from("transactions").delete().eq("id", id);
+    if (error) {
+      // Primer intento tras un rato inactivo: el token puede haber caducado.
+      // Se refresca la sesión y se reintenta una vez antes de avisar.
+      await supabase.auth.refreshSession();
+      ({ error } = await supabase.from("transactions").delete().eq("id", id));
+    }
+    setRemoving(null);
+    if (error) return void toast.error("No se pudo eliminar: " + error.message);
     toast.success("Movimiento eliminado");
     router.refresh();
   }
@@ -180,7 +188,12 @@ export function TransactionsList({
               {t.type === "income" ? "+" : "−"}
               {eur(t.amount)}
             </span>
-            <Button variant="ghost" size="icon" onClick={() => remove(t.id)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled={removing !== null}
+              onClick={() => remove(t.id)}
+            >
               <Trash2 className="size-4" />
             </Button>
           </div>
