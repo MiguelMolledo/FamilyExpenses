@@ -21,7 +21,13 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { PiggyBank, TriangleAlert, TrendingUp, TrendingDown } from "lucide-react";
+import {
+  ArrowLeftRight,
+  PiggyBank,
+  TriangleAlert,
+  TrendingUp,
+  TrendingDown,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default async function DashboardPage({
@@ -109,7 +115,16 @@ export default async function DashboardPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">Hola 👋</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">Hola 👋</h1>
+        <Link
+          href="/comparar"
+          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeftRight className="size-4" />
+          Comparar meses
+        </Link>
+      </div>
 
       <MonthNav month={month} base="/" />
 
