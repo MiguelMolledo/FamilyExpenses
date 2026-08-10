@@ -83,17 +83,30 @@ export default function ImportarPage() {
   async function onFile(file: File) {
     setParsing(true);
     setRows([]);
-    const form = new FormData();
-    form.append("file", file);
-    const res = await fetch("/api/import/parse", { method: "POST", body: form });
-    setParsing(false);
-    if (!res.ok) return void toast.error("No se pudo procesar el archivo");
-    const data = await res.json();
-    if (data.warning) toast.warning(data.warning);
-    setRows(data.rows ?? []);
-    setCategories(data.categories ?? []);
-    setSubcategories(data.subcategories ?? []);
-    setFileName(data.fileName ?? file.name);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/import/parse", {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        return void toast.error(
+          err?.error ?? "No se pudo procesar el archivo"
+        );
+      }
+      const data = await res.json();
+      if (data.warning) toast.warning(data.warning);
+      setRows(data.rows ?? []);
+      setCategories(data.categories ?? []);
+      setSubcategories(data.subcategories ?? []);
+      setFileName(data.fileName ?? file.name);
+    } catch {
+      toast.error("Fallo de red al subir el extracto. Vuelve a intentarlo.");
+    } finally {
+      setParsing(false);
+    }
   }
 
   function update(i: number, patch: Partial<Row>) {
@@ -107,36 +120,55 @@ export default function ImportarPage() {
   }
 
   const selected = rows.filter((r) => r.checked);
+  const dupCount = rows.filter((r) => r.checked && r.duplicate).length;
+
+  function setAllChecked(checked: boolean) {
+    setRows((prev) => prev.map((r) => ({ ...r, checked })));
+  }
+
+  function uncheckDuplicates() {
+    setRows((prev) =>
+      prev.map((r) => (r.duplicate ? { ...r, checked: false } : r))
+    );
+  }
 
   async function commit() {
     setCommitting(true);
-    const res = await fetch("/api/import/commit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fileName,
-        rows: selected.map((r) => ({
-          date: r.date,
-          description: r.description,
-          amount: r.amount,
-          type: r.type,
-          category_id: r.category_id,
-          subcategory_id: r.subcategory_id,
-          is_fixed: r.is_fixed,
-          dedup_hash: r.dedup_hash,
-        })),
-      }),
-    });
-    setCommitting(false);
-    if (!res.ok) return void toast.error("No se pudo importar");
-    const data = await res.json();
-    toast.success(
-      `Importados ${data.imported} movimientos` +
-        (data.skipped > 0 ? ` (${data.skipped} saltados)` : "")
-    );
-    setRows([]);
-    localStorage.removeItem(DRAFT_KEY);
-    router.refresh();
+    try {
+      const res = await fetch("/api/import/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileName,
+          rows: selected.map((r) => ({
+            date: r.date,
+            description: r.description,
+            amount: r.amount,
+            type: r.type,
+            category_id: r.category_id,
+            subcategory_id: r.subcategory_id,
+            is_fixed: r.is_fixed,
+            dedup_hash: r.dedup_hash,
+          })),
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        return void toast.error(err?.error ?? "No se pudo importar");
+      }
+      const data = await res.json();
+      toast.success(
+        `Importados ${data.imported} movimientos` +
+          (data.skipped > 0 ? ` (${data.skipped} saltados)` : "")
+      );
+      setRows([]);
+      localStorage.removeItem(DRAFT_KEY);
+      router.refresh();
+    } catch {
+      toast.error("Fallo de red al importar. Vuelve a intentarlo.");
+    } finally {
+      setCommitting(false);
+    }
   }
 
   return (
@@ -195,6 +227,25 @@ export default function ImportarPage() {
                 {committing ? "Importando…" : `Importar ${selected.length}`}
               </Button>
             </div>
+          </div>
+
+          <div className="flex items-center gap-3 text-sm">
+            <label className="flex items-center gap-2">
+              <Checkbox
+                checked={selected.length === rows.length}
+                onCheckedChange={(c) => setAllChecked(c === true)}
+              />
+              <span className="text-muted-foreground">Seleccionar todo</span>
+            </label>
+            {dupCount > 0 && (
+              <button
+                type="button"
+                onClick={uncheckDuplicates}
+                className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                Desmarcar {dupCount} duplicado{dupCount > 1 ? "s" : ""}
+              </button>
+            )}
           </div>
 
           <div className="flex flex-col gap-2">

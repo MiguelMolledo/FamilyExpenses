@@ -8,6 +8,7 @@ import {
   parseCaixabankText,
   parseCaixabankSheet,
   dedupHash,
+  normalizeForMatch,
 } from "@/lib/caixabank";
 
 const SuggestionSchema = z.object({
@@ -34,6 +35,12 @@ export async function POST(req: Request) {
   const file = form.get("file");
   if (!(file instanceof File)) {
     return Response.json({ error: "Falta el archivo" }, { status: 400 });
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    return Response.json(
+      { error: "El archivo supera los 5 MB. ¿Seguro que es un extracto?" },
+      { status: 400 }
+    );
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -89,12 +96,14 @@ export async function POST(req: Request) {
         .lte("date", maxDate),
       supabase.from("categories").select("id, name, kind"),
       supabase.from("subcategories").select("id, category_id, name, kind"),
-      // Subcats donde ya hay recibos marcados como fijos: pista del checkbox
+      // Subcats donde ya hay recibos marcados como fijos: pista del checkbox.
+      // Ordenado por fecha desc: si el límite recorta, recorta lo antiguo.
       supabase
         .from("transactions")
         .select("subcategory_id")
         .eq("is_fixed", true)
         .not("subcategory_id", "is", null)
+        .order("date", { ascending: false })
         .limit(1000),
     ]);
 
@@ -131,7 +140,9 @@ export async function POST(req: Request) {
   );
 
   const rows = movements.map((m, i) => {
-    const normDesc = m.description.toLowerCase();
+    // Misma normalización que rulePattern: si no, los patrones aprendidos con
+    // acentos/puntuación/dígitos en el concepto original no coinciden nunca
+    const normDesc = normalizeForMatch(m.description);
     const rule = rules.find((r) => normDesc.includes(r.pattern));
     const sub = rule?.subcategory_id
       ? subById.get(rule.subcategory_id)

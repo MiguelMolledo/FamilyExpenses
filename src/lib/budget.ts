@@ -61,6 +61,10 @@ export type MonthBudget = {
   recurringIncomes: RecurringIncome[];
   transactions: Transaction[];
   closed: boolean;
+  /** el mes anterior tiene cierre: si no, el arrastre de este mes es 0 */
+  prevClosed: boolean;
+  /** el mes anterior tiene movimientos (para no avisar antes del primer mes) */
+  prevHasActivity: boolean;
 };
 
 /**
@@ -74,8 +78,16 @@ export async function getMonthBudget(
 ): Promise<MonthBudget> {
   const end = monthEnd(month);
   const prevMonth = addMonths(month, -1);
-  const [incomesQ, txQ, planQ, closureQ, prevClosureQ, categoriesQ, subsQ] =
-    await Promise.all([
+  const [
+    incomesQ,
+    txQ,
+    planQ,
+    closureQ,
+    prevClosureQ,
+    categoriesQ,
+    subsQ,
+    prevTxQ,
+  ] = await Promise.all([
       supabase
         .from("recurring_incomes")
         .select("*")
@@ -97,6 +109,11 @@ export async function getMonthBudget(
         .maybeSingle(),
       supabase.from("categories").select("*"),
       supabase.from("subcategories").select("*"),
+      supabase
+        .from("transactions")
+        .select("id", { count: "exact", head: true })
+        .gte("date", prevMonth)
+        .lte("date", monthEnd(prevMonth)),
     ]);
 
   const recurringIncomes = (incomesQ.data ?? []) as RecurringIncome[];
@@ -127,7 +144,28 @@ export async function getMonthBudget(
   const extraordinaryIncome = counted
     .filter((t) => t.type === "income" && !t.recurring_income_id)
     .reduce((s, t) => s + t.amount, 0);
-  const realIncome = expectedIncome + extraordinaryIncome;
+  // Ingreso recurrente: si ya llegó (movimiento vinculado), manda el importe
+  // real — una nómina con paga variable o atraso no debe contarse al previsto.
+  // Si aún no llegó, cuenta el previsto (comportamiento de siempre).
+  const linkedByRec = new Map<string, number>();
+  for (const t of counted) {
+    if (t.type === "income" && t.recurring_income_id) {
+      linkedByRec.set(
+        t.recurring_income_id,
+        (linkedByRec.get(t.recurring_income_id) ?? 0) + t.amount
+      );
+    }
+  }
+  const recIds = new Set(recurringIncomes.map((i) => i.id));
+  let receivedIncome = recurringIncomes.reduce(
+    (s, i) => s + (linkedByRec.get(i.id) ?? Number(i.amount)),
+    0
+  );
+  // Ingresos vinculados a recurrentes ya terminados: cuentan por su importe
+  for (const [id, amount] of linkedByRec) {
+    if (!recIds.has(id)) receivedIncome += amount;
+  }
+  const realIncome = receivedIncome + extraordinaryIncome;
 
   const realExpenses = counted
     .filter((t) => t.type === "expense")
@@ -151,6 +189,8 @@ export async function getMonthBudget(
     recurringIncomes,
     transactions,
     closed: !!closureQ.data,
+    prevClosed: !!prevClosureQ.data,
+    prevHasActivity: (prevTxQ.count ?? 0) > 0,
   };
 }
 

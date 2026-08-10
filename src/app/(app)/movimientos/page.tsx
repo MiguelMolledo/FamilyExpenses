@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getMonthBudget, monthEnd } from "@/lib/budget";
-import { monthStart, eur } from "@/lib/types";
+import { currentMonthStart, eur } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { MonthNav } from "@/components/movimientos/month-nav";
 import { TransactionsList } from "@/components/movimientos/transactions-list";
 import { TransactionDialog } from "@/components/movimientos/transaction-dialog";
@@ -16,7 +17,7 @@ export default async function MovimientosPage({
   const { mes } = await searchParams;
   const month = /^\d{4}-\d{2}-01$/.test(mes ?? "")
     ? mes!
-    : monthStart(new Date());
+    : currentMonthStart();
 
   const supabase = await createClient();
   const [budget, categoriesQ, subcategoriesQ, petsQ, profilesQ, splitsQ] =
@@ -70,7 +71,14 @@ export default async function MovimientosPage({
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Disponible</p>
-            <p className="font-semibold">{eur(budget.available)}</p>
+            <p
+              className={cn(
+                "font-semibold",
+                budget.available >= 0 ? "text-green-600" : "text-red-600"
+              )}
+            >
+              {eur(budget.available)}
+            </p>
           </div>
         </CardContent>
       </Card>

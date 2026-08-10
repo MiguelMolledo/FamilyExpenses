@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Trash2, PawPrint, Repeat, Sparkles } from "lucide-react";
 import { FilterBar, fold } from "@/components/filter-bar";
-import { createClient } from "@/lib/supabase/client";
+import { deleteRow } from "@/lib/delete-row";
 import {
-  eur,
+  signedEur,
+  shortDate,
   type Category,
   type Pet,
   type Profile,
@@ -81,15 +82,9 @@ export function TransactionsList({
 
   async function remove(id: string) {
     if (removing) return;
+    if (!window.confirm("¿Eliminar este movimiento?")) return;
     setRemoving(id);
-    const supabase = createClient();
-    let { error } = await supabase.from("transactions").delete().eq("id", id);
-    if (error) {
-      // Primer intento tras un rato inactivo: el token puede haber caducado.
-      // Se refresca la sesión y se reintenta una vez antes de avisar.
-      await supabase.auth.refreshSession();
-      ({ error } = await supabase.from("transactions").delete().eq("id", id));
-    }
+    const { error } = await deleteRow("transactions", id);
     setRemoving(null);
     if (error) return void toast.error("No se pudo eliminar: " + error.message);
     toast.success("Movimiento eliminado");
@@ -135,8 +130,7 @@ export function TransactionsList({
                   g.net >= 0 ? "text-green-600" : "text-red-600"
                 )}
               >
-                {g.net >= 0 ? "+" : "−"}
-                {eur(Math.abs(g.net))}
+                {signedEur(g.net)}
               </span>
             </div>
             {g.items.map((t) => (
@@ -166,10 +160,7 @@ export function TransactionsList({
                   )}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {new Date(t.date + "T00:00:00").toLocaleDateString("es-ES", {
-                    day: "numeric",
-                    month: "short",
-                  })}
+                  {shortDate(t.date)}
                   {t.category_id && catById.get(t.category_id)
                     ? ` · ${catById.get(t.category_id)}`
                     : ""}
@@ -185,12 +176,12 @@ export function TransactionsList({
                 t.type === "income" ? "text-green-600" : "text-red-600"
               )}
             >
-              {t.type === "income" ? "+" : "−"}
-              {eur(t.amount)}
+              {signedEur(t.type === "income" ? t.amount : -t.amount)}
             </span>
             <Button
               variant="ghost"
               size="icon"
+              aria-label="Eliminar movimiento"
               disabled={removing !== null}
               onClick={() => remove(t.id)}
             >

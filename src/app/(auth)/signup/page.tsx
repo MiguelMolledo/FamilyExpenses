@@ -142,6 +142,11 @@ export default function SignupPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 required
               />
+              {username && normalizeUsername(username) !== username && (
+                <p className="text-xs text-muted-foreground">
+                  Se registrará como: {normalizeUsername(username) || "—"}
+                </p>
+              )}
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="password">Contraseña</Label>

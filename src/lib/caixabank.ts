@@ -21,7 +21,12 @@ function parseSpanishAmount(s: string): number {
   return Number(s.replace(/\./g, "").replace(",", "."));
 }
 
-function toIsoDate(d: string, m: string, y: string): string {
+function toIsoDate(d: string, m: string, y: string): string | null {
+  const day = Number(d);
+  const month = Number(m);
+  const t = Date.UTC(Number(y), month - 1, day);
+  const rt = new Date(t);
+  if (rt.getUTCDate() !== day || rt.getUTCMonth() !== month - 1) return null;
   return `${y}-${m}-${d}`;
 }
 
@@ -37,17 +42,30 @@ export function parseCaixabankText(text: string): ParsedMovement[] {
     const amounts = [...line.matchAll(AMOUNT_RE)];
     if (amounts.length === 0) continue;
 
-    // Importe: si hay ≥2 cantidades al final, la penúltima es el importe y la
-    // última el saldo. Con una sola, esa es el importe.
-    const amountMatch =
-      amounts.length >= 2 ? amounts[amounts.length - 2] : amounts[0];
-    const value = parseSpanishAmount(amountMatch[0]);
+    // Importe: las cantidades ancladas al final de línea mandan (importe, o
+    // importe + saldo); así un número con pinta de importe dentro de la
+    // descripción ("MENU 2,50") no desplaza al importe real. Si la línea no
+    // acaba en cantidades, se cae a la heurística de penúltima=importe.
+    const endMatch = line.match(
+      /(-?\d{1,3}(?:\.\d{3})*,\d{2})(?:\s+-?\d{1,3}(?:\.\d{3})*,\d{2})?\s*$/
+    );
+    const amountStr = endMatch
+      ? endMatch[1]
+      : amounts.length >= 2
+        ? amounts[amounts.length - 2][0]
+        : amounts[0][0];
+    const amountIdx = endMatch
+      ? endMatch.index
+      : amounts.length >= 2
+        ? amounts[amounts.length - 2].index
+        : amounts[0].index;
+    const value = parseSpanishAmount(amountStr);
     if (!value || Math.abs(value) > 1_000_000) continue;
 
-    // Descripción: lo que queda entre la última fecha y el primer importe
+    // Descripción: lo que queda entre la última fecha y el importe
     const lastDate = dates[dates.length - 1];
     const descStart = (lastDate.index ?? 0) + lastDate[0].length;
-    const descEnd = amountMatch.index ?? line.length;
+    const descEnd = amountIdx ?? line.length;
     const description = line
       .slice(descStart, descEnd)
       .replace(/\s+/g, " ")
@@ -55,8 +73,10 @@ export function parseCaixabankText(text: string): ParsedMovement[] {
     if (!description) continue;
 
     const [, d, m, y] = dates[0];
+    const date = toIsoDate(d, m, y);
+    if (!date) continue;
     movements.push({
-      date: toIsoDate(d, m, y),
+      date,
       description,
       amount: Math.abs(value),
       type: value < 0 ? "expense" : "income",
@@ -218,9 +238,14 @@ export function dedupHash(
   return `${date}|${amount.toFixed(2)}|${norm}`.slice(0, 200);
 }
 
-/** Patrón de aprendizaje para category_rules a partir de un concepto. */
-export function rulePattern(description: string): string {
-  const norm = description
+/**
+ * Normalización compartida entre el patrón aprendido y la descripción contra
+ * la que se comprueba: sin acentos, sin dígitos, solo letras y espacios. Si el
+ * matcher no normaliza igual que `rulePattern`, los patrones con acentos o
+ * puntuación ("vto. préstamo") no vuelven a coincidir nunca.
+ */
+export function normalizeForMatch(text: string): string {
+  return text
     .toLowerCase()
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -228,5 +253,9 @@ export function rulePattern(description: string): string {
     .replace(/[^a-z ]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return norm.split(" ").slice(0, 3).join(" ").slice(0, 40);
+}
+
+/** Patrón de aprendizaje para category_rules a partir de un concepto. */
+export function rulePattern(description: string): string {
+  return normalizeForMatch(description).split(" ").slice(0, 3).join(" ").slice(0, 40);
 }

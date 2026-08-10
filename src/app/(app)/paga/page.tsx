@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import {
   eur,
-  monthStart,
+  currentMonthStart,
   type PersonalAllowance,
   type PersonalMovement,
   type Profile,
@@ -16,7 +16,7 @@ import { Wallet, Plus } from "lucide-react";
 
 export default async function PagaPage() {
   const supabase = await createClient();
-  const month = monthStart(new Date());
+  const month = currentMonthStart();
 
   const [userQ, profilesQ, allowancesQ, movementsQ] = await Promise.all([
     supabase.auth.getUser(),

@@ -33,6 +33,28 @@ export async function POST(req: Request) {
   }
   const { rows, fileName } = parsed.data;
 
+  // Los UUIDs de categoría vienen del cliente: se validan contra la taxonomía
+  // de la familia (el FK no comprueba pertenencia, y un par categoría/subcat
+  // incoherente descuadraría los presupuestos y se "aprendería" como regla).
+  const [catsQ, subsQ] = await Promise.all([
+    supabase.from("categories").select("id"),
+    supabase.from("subcategories").select("id, category_id"),
+  ]);
+  const catIds = new Set((catsQ.data ?? []).map((c) => c.id));
+  const subById = new Map((subsQ.data ?? []).map((s) => [s.id, s.category_id]));
+  for (const row of rows) {
+    if (row.category_id && !catIds.has(row.category_id)) {
+      return Response.json({ error: "Categoría no válida" }, { status: 400 });
+    }
+    if (row.subcategory_id) {
+      const catOfSub = subById.get(row.subcategory_id);
+      if (!catOfSub || (row.category_id && catOfSub !== row.category_id)) {
+        return Response.json({ error: "Subcategoría no válida" }, { status: 400 });
+      }
+      row.category_id = catOfSub;
+    }
+  }
+
   const source = /\.xlsx?$/i.test(fileName) ? "caixabank_xls" : "caixabank_pdf";
   const { data: batch, error: batchError } = await supabase
     .from("import_batches")
@@ -43,28 +65,29 @@ export async function POST(req: Request) {
     return Response.json({ error: batchError.message }, { status: 500 });
   }
 
-  let imported = 0;
+  // Un solo upsert para todo el lote: los duplicados (dedup_hash ya guardado)
+  // se ignoran vía ON CONFLICT en vez de un insert por fila.
   const errors: string[] = [];
-  for (const row of rows) {
-    const { error } = await supabase.from("transactions").insert({
-      date: row.date,
-      description: row.description,
-      amount: row.amount,
-      type: row.type,
-      category_id: row.category_id,
-      subcategory_id: row.subcategory_id,
-      is_fixed: row.type === "expense" && row.is_fixed,
-      import_batch_id: batch.id,
-      dedup_hash: row.dedup_hash,
-      is_extraordinary: false,
-    });
-    if (error) {
-      // 23505 = duplicado (dedup_hash único): lo saltamos sin romper el resto
-      if (!error.message.includes("duplicate")) errors.push(error.message);
-    } else {
-      imported++;
-    }
-  }
+  const { data: inserted, error: insertError } = await supabase
+    .from("transactions")
+    .upsert(
+      rows.map((row) => ({
+        date: row.date,
+        description: row.description,
+        amount: row.amount,
+        type: row.type,
+        category_id: row.category_id,
+        subcategory_id: row.subcategory_id,
+        is_fixed: row.type === "expense" && row.is_fixed,
+        import_batch_id: batch.id,
+        dedup_hash: row.dedup_hash,
+        is_extraordinary: false,
+      })),
+      { onConflict: "family_id,dedup_hash", ignoreDuplicates: true }
+    )
+    .select("id");
+  if (insertError) errors.push(insertError.message);
+  const imported = inserted?.length ?? 0;
 
   await supabase
     .from("import_batches")

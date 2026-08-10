@@ -43,18 +43,6 @@ export type Pet = {
   default_split_pct: number;
 };
 
-export type RecurringExpense = {
-  id: string;
-  family_id: string;
-  category_id: string | null;
-  subcategory_id: string | null;
-  name: string;
-  amount: number;
-  period: "monthly" | "annual";
-  starts_on: string;
-  ends_on: string | null;
-};
-
 export type RecurringIncome = {
   id: string;
   family_id: string;
@@ -75,7 +63,6 @@ export type Transaction = {
   category_id: string | null;
   subcategory_id: string | null;
   description: string;
-  recurring_expense_id: string | null;
   recurring_income_id: string | null;
   profile_id: string | null;
   /** recibo previsto (fijo): para el seguimiento de fijos, no cambia el presupuesto */
@@ -156,7 +143,42 @@ export function eur(n: number): string {
   }).format(n);
 }
 
+/** Importe con signo explícito: "+1.234,56 €" / "−12,00 €" */
+export function signedEur(n: number): string {
+  return `${n < 0 ? "−" : "+"}${eur(Math.abs(n))}`;
+}
+
+/** Fecha compacta para listas: "5 ago" (o "5 ago 2026" con year) */
+export function shortDate(iso: string, opts?: { year?: boolean }): string {
+  return new Date(iso + "T00:00:00").toLocaleDateString("es-ES", {
+    day: "numeric",
+    month: "short",
+    ...(opts?.year ? { year: "numeric" as const } : {}),
+  });
+}
+
+/** "12,50" o "12.50" → 12.5 (los teclados españoles escriben coma); NaN si no es un número */
+export function parseAmount(s: string): number {
+  const t = s.trim().replace(",", ".");
+  return t === "" ? NaN : Number(t);
+}
+
 /** 'YYYY-MM-01' del mes de una fecha */
 export function monthStart(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+/**
+ * 'YYYY-MM-DD' de hoy en Europa/Madrid. En Vercel el servidor corre en UTC:
+ * entre las 00:00 y la 01:00/02:00 españolas, new Date() todavía es "ayer".
+ */
+export function todayMadrid(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Madrid",
+  }).format(new Date());
+}
+
+/** 'YYYY-MM-01' del mes actual en Europa/Madrid */
+export function currentMonthStart(): string {
+  return `${todayMadrid().slice(0, 7)}-01`;
 }

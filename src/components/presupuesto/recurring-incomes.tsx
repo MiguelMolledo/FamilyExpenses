@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import { Plus, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { addMonths, monthEnd } from "@/lib/budget";
-import { eur, type Profile, type RecurringIncome } from "@/lib/types";
+import { eur, parseAmount, type Profile, type RecurringIncome } from "@/lib/types";
+import { AmountInput } from "@/components/amount-input";
 import {
   Card,
   CardContent,
@@ -107,7 +108,7 @@ function IncomeDialog({
   profiles: Profile[];
   month: string;
   income?: RecurringIncome;
-  children: React.ReactNode;
+  children: React.ReactElement;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -121,7 +122,7 @@ function IncomeDialog({
   const [saving, setSaving] = useState(false);
 
   async function save() {
-    if (!name.trim() || !Number(amount)) {
+    if (!name.trim() || !parseAmount(amount)) {
       toast.error("Nombre e importe son obligatorios");
       return;
     }
@@ -129,7 +130,7 @@ function IncomeDialog({
     const supabase = createClient();
     const payload = {
       name: name.trim(),
-      amount: Number(amount),
+      amount: parseAmount(amount),
       type,
       profile_id: profileId || null,
     };
@@ -178,7 +179,7 @@ function IncomeDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<span>{children}</span>} />
+      <DialogTrigger render={children} />
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>
@@ -197,10 +198,7 @@ function IncomeDialog({
           <div className="grid grid-cols-2 gap-2">
             <div className="flex flex-col gap-2">
               <Label>Importe (€/mes)</Label>
-              <Input
-                type="number"
-                inputMode="decimal"
-                min="0"
+              <AmountInput
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
               />

@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { activeInMonth, addMonths, monthEnd } from "@/lib/budget";
 import {
-  monthStart,
+  currentMonthStart,
   type PersonalAllowance,
   type Profile,
 } from "@/lib/types";
@@ -28,7 +28,7 @@ export function PersonalAllowancesSection({
   allowances: PersonalAllowance[];
 }) {
   const router = useRouter();
-  const month = monthStart(new Date());
+  const month = currentMonthStart();
   const activeByProfile = new Map(
     allowances
       .filter((a) => activeInMonth(a, month) && !a.ends_on)

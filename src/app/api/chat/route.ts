@@ -9,7 +9,7 @@ import {
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getCategoryBudgets, getMonthBudget, monthEnd } from "@/lib/budget";
-import { monthStart } from "@/lib/types";
+import { currentMonthStart, todayMadrid } from "@/lib/types";
 
 export const maxDuration = 60;
 
@@ -25,8 +25,8 @@ export async function POST(req: Request) {
   if (!user) return new Response("No autorizado", { status: 401 });
 
   const { messages }: { messages: UIMessage[] } = await req.json();
-  const today = new Date().toISOString().slice(0, 10);
-  const month = monthStart(new Date());
+  const today = todayMadrid();
+  const month = currentMonthStart();
 
   // Contexto de la familia para que el modelo resuelva nombres sin adivinar
   const [categoriesQ, subcategoriesQ, recurringIncQ, petsQ, profilesQ] =
@@ -129,18 +129,32 @@ Reglas:
             .single();
           if (error) return { error: error.message };
           if (input.pet_split && pets.length > 0) {
-            await supabase.from("transaction_pet_splits").insert(
-              pets
-                .map((p) => ({
+            // Reparto en céntimos; si los porcentajes suman 100, la última
+            // mascota se lleva el resto para que la suma cuadre con el total
+            // (10,01 € al 50/50 no puede ser 5,01 + 5,01).
+            const totalPct = pets.reduce(
+              (s, p) => s + Number(p.default_split_pct),
+              0
+            );
+            const totalCents = Math.round(input.amount * 100);
+            let remaining = totalCents;
+            const splits = pets
+              .map((p, i) => {
+                const cents =
+                  i === pets.length - 1 && totalPct === 100
+                    ? remaining
+                    : Math.round(
+                        (totalCents * Number(p.default_split_pct)) / 100
+                      );
+                remaining -= cents;
+                return {
                   transaction_id: data.id,
                   pet_id: p.id,
-                  amount:
-                    Math.round(
-                      input.amount * Number(p.default_split_pct)
-                    ) / 100,
-                }))
-                .filter((r) => r.amount > 0)
-            );
+                  amount: cents / 100,
+                };
+              })
+              .filter((r) => r.amount > 0);
+            await supabase.from("transaction_pet_splits").insert(splits);
           }
           return { ok: true, id: data.id };
         },
@@ -292,30 +306,65 @@ Reglas:
           type: z.enum(["expense", "income"]).optional(),
         }),
         execute: async (input) => {
-          let q = supabase
-            .from("transactions")
-            .select(
-              "date, amount, type, description, category_id, subcategory_id, is_fixed"
-            )
-            .gte("date", input.from)
-            .lte("date", input.to)
-            .order("date", { ascending: false })
-            .limit(100);
           const category = findCategory(input.category_name);
-          if (category) q = q.eq("category_id", category.id);
           const sub = findSubcategory(input.subcategory_name, category?.id);
-          if (sub) q = q.eq("subcategory_id", sub.id);
-          if (input.only_fixed !== undefined)
-            q = q.eq("is_fixed", input.only_fixed);
-          if (input.type) q = q.eq("type", input.type);
-          if (input.text) q = q.ilike("description", `%${input.text}%`);
-          const { data, error } = await q;
+          const buildQuery = (select: string) => {
+            let q = supabase
+              .from("transactions")
+              .select(select)
+              .gte("date", input.from)
+              .lte("date", input.to)
+              .order("date", { ascending: false });
+            if (category) q = q.eq("category_id", category.id);
+            if (sub) q = q.eq("subcategory_id", sub.id);
+            if (input.only_fixed !== undefined)
+              q = q.eq("is_fixed", input.only_fixed);
+            if (input.type) q = q.eq("type", input.type);
+            if (input.text) q = q.ilike("description", `%${input.text}%`);
+            return q;
+          };
+
+          const { data, error } = await buildQuery(
+            "date, amount, type, description, category_id, subcategory_id, is_fixed"
+          ).limit(100);
           if (error) return { error: error.message };
+          const rows = (data ?? []) as unknown as {
+            date: string;
+            amount: number;
+            type: string;
+            description: string;
+            category_id: string | null;
+            subcategory_id: string | null;
+            is_fixed: boolean;
+          }[];
+
+          // El total va sobre TODO lo que cumple el filtro, no sobre la lista
+          // truncada a 100: si no, "cuánto llevo este año" mentiría en cuanto
+          // haya más movimientos que el límite. Paginado (PostgREST corta a
+          // 1000 filas por respuesta).
+          let total = 0;
+          let summed = 0;
+          let totalTruncated = false;
+          for (let page = 0; page < 10; page++) {
+            const { data: amounts, error: sumError } = await buildQuery(
+              "amount"
+            ).range(page * 1000, page * 1000 + 999);
+            if (sumError) return { error: sumError.message };
+            const batch = (amounts ?? []) as unknown as { amount: number }[];
+            total += batch.reduce((s, t) => s + Number(t.amount), 0);
+            summed += batch.length;
+            if (batch.length < 1000) break;
+            if (page === 9) totalTruncated = true;
+          }
+
           const catName = new Map(categories.map((c) => [c.id, c.name]));
           const subName = new Map(subcategories.map((s) => [s.id, s.name]));
           return {
-            total: (data ?? []).reduce((s, t) => s + Number(t.amount), 0),
-            movimientos: (data ?? []).map((t) => ({
+            total,
+            movimientos_encontrados: summed,
+            lista_truncada_a_100: rows.length === 100,
+            ...(totalTruncated ? { aviso: "total parcial (>10000 movs)" } : {}),
+            movimientos: rows.map((t) => ({
               fecha: t.date,
               importe: Number(t.amount),
               tipo: t.type,

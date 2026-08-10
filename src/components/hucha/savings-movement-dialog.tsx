@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { eur } from "@/lib/types";
+import { eur, parseAmount, todayMadrid } from "@/lib/types";
+import { AmountInput } from "@/components/amount-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,7 +35,7 @@ export function SavingsMovementDialog({
   accountId: string;
   monthlyTarget: number;
   currentBalance: number;
-  children: React.ReactNode;
+  children: React.ReactElement;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -42,9 +43,20 @@ export function SavingsMovementDialog({
   const [amount, setAmount] = useState(
     monthlyTarget > 0 ? String(monthlyTarget) : ""
   );
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayMadrid());
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+
+  function onOpenChange(o: boolean) {
+    setOpen(o);
+    if (o) {
+      // Estado limpio en cada apertura: nada del movimiento anterior
+      setKind("monthly");
+      setAmount(monthlyTarget > 0 ? String(monthlyTarget) : "");
+      setDate(todayMadrid());
+      setNote("");
+    }
+  }
 
   function onKindChange(k: Kind) {
     setKind(k);
@@ -54,7 +66,7 @@ export function SavingsMovementDialog({
   }
 
   async function save() {
-    const value = Number(amount);
+    const value = parseAmount(amount);
     if (!amount || isNaN(value)) return void toast.error("Importe no válido");
 
     // "Actualizar saldo" (ej. tras liquidar intereses) = ajuste por diferencia
@@ -82,8 +94,8 @@ export function SavingsMovementDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<span>{children}</span>} />
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger render={children} />
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Movimiento de la hucha</DialogTitle>
@@ -121,9 +133,7 @@ export function SavingsMovementDialog({
               <Label>
                 {kind === "set_balance" ? "Nuevo saldo (€)" : "Importe (€)"}
               </Label>
-              <Input
-                type="number"
-                inputMode="decimal"
+              <AmountInput
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
               />

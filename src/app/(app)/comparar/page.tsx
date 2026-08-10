@@ -4,7 +4,7 @@ import {
   getMonthBudget,
 } from "@/lib/budget";
 import { createClient } from "@/lib/supabase/server";
-import { eur, monthStart } from "@/lib/types";
+import { eur, currentMonthStart } from "@/lib/types";
 import { MonthPickers } from "@/components/comparar/month-pickers";
 import {
   Card,
@@ -46,7 +46,7 @@ export default async function CompararPage({
   searchParams: Promise<{ a?: string; b?: string }>;
 }) {
   const supabase = await createClient();
-  const current = monthStart(new Date());
+  const current = currentMonthStart();
   const params = await searchParams;
   const valid = (m?: string) => (/^\d{4}-\d{2}-01$/.test(m ?? "") ? m! : null);
   const a = valid(params.a) ?? addMonths(current, -1);
@@ -103,16 +103,21 @@ export default async function CompararPage({
     },
   ];
 
-  // Gasto por categoría en ambos meses (unión, ordenado por el mes B)
+  // Gasto por categoría en ambos meses (unión, ordenado por el mes B);
+  // el presupuesto del mes B sirve de referencia "¿vamos bien?"
   const spentA = new Map(catsA.rows.map((r) => [r.category.id, r.spent]));
   const byId = new Map(catsB.rows.map((r) => [r.category.id, r]));
   for (const r of catsA.rows) if (!byId.has(r.category.id)) byId.set(r.category.id, r);
   const catRows = [...byId.values()]
-    .map((r) => ({
-      name: r.category.name,
-      a: spentA.get(r.category.id) ?? 0,
-      b: catsB.rows.find((x) => x.category.id === r.category.id)?.spent ?? 0,
-    }))
+    .map((r) => {
+      const rowB = catsB.rows.find((x) => x.category.id === r.category.id);
+      return {
+        name: r.category.name,
+        a: spentA.get(r.category.id) ?? 0,
+        b: rowB?.spent ?? 0,
+        budget: rowB?.budget ?? null,
+      };
+    })
     .filter((r) => r.a > 0.005 || r.b > 0.005)
     .sort((x, y) => y.b - x.b);
 
@@ -157,6 +162,10 @@ export default async function CompararPage({
       <Card>
         <CardHeader>
           <CardTitle>Gasto por categoría</CardTitle>
+          <CardDescription>
+            Bajo cada categoría, su presupuesto mensual; el gasto de{" "}
+            {monthLabel(b)} va en rojo si lo supera.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col divide-y">
           {catRows.length === 0 && (
@@ -169,11 +178,25 @@ export default async function CompararPage({
               key={r.name}
               className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-4 py-2 text-sm"
             >
-              <span className="truncate">{r.name}</span>
+              <span className="min-w-0">
+                <span className="block truncate">{r.name}</span>
+                {r.budget != null && (
+                  <span className="block text-xs text-muted-foreground">
+                    ppto {eur(r.budget)}
+                  </span>
+                )}
+              </span>
               <span className="w-20 text-right text-muted-foreground">
                 {eur(r.a)}
               </span>
-              <span className="w-20 text-right font-medium">{eur(r.b)}</span>
+              <span
+                className={cn(
+                  "w-20 text-right font-medium",
+                  r.budget != null && r.b > r.budget && "text-red-600"
+                )}
+              >
+                {eur(r.b)}
+              </span>
               <span className="w-20 text-right">
                 <Delta value={r.b - r.a} goodUp={false} />
               </span>

@@ -3,8 +3,8 @@
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { eur, type SavingsMovement } from "@/lib/types";
+import { deleteRow } from "@/lib/delete-row";
+import { signedEur, shortDate, type SavingsMovement } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -20,11 +20,10 @@ export function MovementsList({ movements }: { movements: SavingsMovement[] }) {
   const router = useRouter();
 
   async function remove(id: string) {
-    const { error } = await createClient()
-      .from("savings_movements")
-      .delete()
-      .eq("id", id);
+    if (!window.confirm("¿Eliminar este movimiento de la hucha?")) return;
+    const { error } = await deleteRow("savings_movements", id);
     if (error) return void toast.error("No se pudo eliminar");
+    toast.success("Movimiento eliminado");
     router.refresh();
   }
 
@@ -48,11 +47,7 @@ export function MovementsList({ movements }: { movements: SavingsMovement[] }) {
                 {m.note || KIND_LABELS[m.kind]}
               </p>
               <p className="text-xs text-muted-foreground">
-                {new Date(m.date + "T00:00:00").toLocaleDateString("es-ES", {
-                  day: "numeric",
-                  month: "short",
-                  year: "numeric",
-                })}
+                {shortDate(m.date, { year: true })}
                 {" · "}
                 {KIND_LABELS[m.kind]}
               </p>
@@ -63,10 +58,14 @@ export function MovementsList({ movements }: { movements: SavingsMovement[] }) {
                 Number(m.amount) >= 0 ? "text-green-600" : "text-red-600"
               )}
             >
-              {Number(m.amount) >= 0 ? "+" : ""}
-              {eur(Number(m.amount))}
+              {signedEur(Number(m.amount))}
             </span>
-            <Button variant="ghost" size="icon" onClick={() => remove(m.id)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Eliminar movimiento"
+              onClick={() => remove(m.id)}
+            >
               <Trash2 className="size-4" />
             </Button>
           </div>

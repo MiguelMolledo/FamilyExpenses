@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import {
   eur,
+  parseAmount,
+  todayMadrid,
   type Category,
   type Pet,
   type Profile,
@@ -14,6 +16,7 @@ import {
   type Transaction,
 } from "@/lib/types";
 import { CategorySubcategorySelect } from "@/components/category-select";
+import { AmountInput } from "@/components/amount-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,16 +37,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-export function TransactionDialog({
-  month,
-  categories,
-  subcategories,
-  recurringIncomes,
-  pets,
-  profiles,
-  transaction,
-  children,
-}: {
+type FormProps = {
   month: string;
   categories: Category[];
   subcategories: Subcategory[];
@@ -51,19 +45,50 @@ export function TransactionDialog({
   pets: Pet[];
   profiles: Profile[];
   transaction?: Transaction;
-  children: React.ReactNode;
-}) {
+};
+
+export function TransactionDialog({
+  children,
+  ...form
+}: FormProps & { children: React.ReactElement }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={children} />
+      <DialogContent className="max-h-[90dvh] max-w-sm overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
+            {form.transaction ? "Editar movimiento" : "Nuevo movimiento"}
+          </DialogTitle>
+        </DialogHeader>
+        {/* El formulario vive dentro del popup: se monta al abrir, así el
+            estado siempre arranca limpio (o resincronizado con la prop) */}
+        <TransactionForm {...form} onDone={() => setOpen(false)} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TransactionForm({
+  month,
+  categories,
+  subcategories,
+  recurringIncomes,
+  pets,
+  profiles,
+  transaction,
+  onDone,
+}: FormProps & { onDone: () => void }) {
   const router = useRouter();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayMadrid();
   const defaultDate = today.slice(0, 7) === month.slice(0, 7) ? today : month;
 
-  const [open, setOpen] = useState(false);
   const [type, setType] = useState<"expense" | "income">(
     transaction?.type ?? "expense"
   );
   const [date, setDate] = useState(transaction?.date ?? defaultDate);
   const [amount, setAmount] = useState(
-    transaction ? String(transaction.amount) : ""
+    transaction ? String(transaction.amount).replace(".", ",") : ""
   );
   const [description, setDescription] = useState(
     transaction?.description ?? ""
@@ -83,13 +108,16 @@ export function TransactionDialog({
 
   function togglePetSplit(checked: boolean) {
     setPetSplit(checked);
-    if (checked && Number(amount) > 0) {
+    const value = parseAmount(amount);
+    if (checked && value > 0) {
       // Prefill con los % por defecto de cada mascota
       setPetAmounts(
         Object.fromEntries(
           pets.map((p) => [
             p.id,
-            ((Number(amount) * Number(p.default_split_pct)) / 100).toFixed(2),
+            ((value * Number(p.default_split_pct)) / 100)
+              .toFixed(2)
+              .replace(".", ","),
           ])
         )
       );
@@ -97,8 +125,9 @@ export function TransactionDialog({
   }
 
   async function save() {
-    const value = Number(amount);
-    if (!value || value <= 0) return void toast.error("Pon un importe válido");
+    const value = parseAmount(amount);
+    if (!Number.isFinite(value) || value <= 0)
+      return void toast.error("Pon un importe válido");
     setSaving(true);
     const supabase = createClient();
 
@@ -110,7 +139,6 @@ export function TransactionDialog({
       category_id: categoryId || null,
       subcategory_id: subcategoryId || null,
       is_fixed: type === "expense" && isFixed,
-      recurring_expense_id: null,
       recurring_income_id: type === "income" ? recurringId || null : null,
       profile_id: profileId || null,
       is_extraordinary: type === "income" && !recurringId,
@@ -144,7 +172,7 @@ export function TransactionDialog({
           .map((p) => ({
             transaction_id: txId,
             pet_id: p.id,
-            amount: Number(petAmounts[p.id]) || 0,
+            amount: parseAmount(petAmounts[p.id] ?? "") || 0,
           }))
           .filter((r) => r.amount > 0);
         if (rows.length > 0) {
@@ -158,202 +186,191 @@ export function TransactionDialog({
     setSaving(false);
     if (error) return void toast.error("No se pudo guardar: " + error.message);
     toast.success(transaction ? "Movimiento actualizado" : "Movimiento añadido");
-    setOpen(false);
+    onDone();
     router.refresh();
   }
 
-  const petTotal = pets.reduce((s, p) => s + (Number(petAmounts[p.id]) || 0), 0);
+  const petTotal = pets.reduce(
+    (s, p) => s + (parseAmount(petAmounts[p.id] ?? "") || 0),
+    0
+  );
+  const amountValue = parseAmount(amount);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<span>{children}</span>} />
-      <DialogContent className="max-h-[90dvh] max-w-sm overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {transaction ? "Editar movimiento" : "Nuevo movimiento"}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="flex flex-col gap-4">
-          <Tabs
-            value={type}
-            onValueChange={(v) => {
-              setType(v as "expense" | "income");
-              setCategoryId("");
-              setSubcategoryId("");
-              setIsFixed(false);
-              setRecurringId("");
-            }}
-          >
-            <TabsList className="w-full">
-              <TabsTrigger value="expense" className="flex-1">
-                Gasto
-              </TabsTrigger>
-              <TabsTrigger value="income" className="flex-1">
-                Ingreso
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+    <div className="flex flex-col gap-4">
+      <Tabs
+        value={type}
+        onValueChange={(v) => {
+          setType(v as "expense" | "income");
+          setCategoryId("");
+          setSubcategoryId("");
+          setIsFixed(false);
+          setRecurringId("");
+        }}
+      >
+        <TabsList className="w-full">
+          <TabsTrigger value="expense" className="flex-1">
+            Gasto
+          </TabsTrigger>
+          <TabsTrigger value="income" className="flex-1">
+            Ingreso
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex flex-col gap-2">
-              <Label>Importe (€)</Label>
-              <Input
-                type="number"
-                inputMode="decimal"
-                min="0"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label>Fecha</Label>
-              <Input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label>Descripción</Label>
-            <Input
-              placeholder="Factura del gas, cena fuera…"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label>Categoría y subcategoría</Label>
-            <CategorySubcategorySelect
-              categories={categories}
-              subcategories={subcategories}
-              kind={type}
-              categoryId={categoryId || null}
-              subcategoryId={subcategoryId || null}
-              onChange={(cat, sub) => {
-                setCategoryId(cat ?? "");
-                setSubcategoryId(sub ?? "");
-              }}
-            />
-          </div>
-
-          {type === "expense" ? (
-            <div className="flex flex-col gap-1">
-              <label className="flex items-center gap-2 text-sm font-medium">
-                <Checkbox
-                  checked={isFixed}
-                  onCheckedChange={(c) => setIsFixed(c === true)}
-                />
-                Es un gasto fijo (recibo previsto)
-              </label>
-              <p className="pl-6 text-xs text-muted-foreground">
-                Descuenta igual del presupuesto de su categoría; esto solo marca
-                que es un recibo planificado, no un gasto variable.
-              </p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              <Label>¿Corresponde a un ingreso recurrente?</Label>
-              <Select
-                value={recurringId}
-                items={{
-                  "": "No, es extraordinario",
-                  ...Object.fromEntries(
-                    recurringIncomes.map((r) => [r.id, r.name])
-                  ),
-                }}
-                onValueChange={(v) => setRecurringId(v ?? "")}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="No, es extraordinario" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">No, es extraordinario</SelectItem>
-                  {recurringIncomes.map((r) => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {r.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Si no lo ligas, cuenta como ingreso extraordinario del mes.
-              </p>
-            </div>
-          )}
-
-          {type === "income" && (
-            <div className="flex flex-col gap-2">
-              <Label>De quién</Label>
-              <Select
-                value={profileId}
-                items={Object.fromEntries(
-                  profiles.map((p) => [p.user_id, p.display_name])
-                )}
-                onValueChange={(v) => setProfileId(v ?? "")}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Familiar (opcional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  {profiles.map((p) => (
-                    <SelectItem key={p.user_id} value={p.user_id}>
-                      {p.display_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {type === "expense" && pets.length > 0 && (
-            <div className="flex flex-col gap-3 rounded-lg border p-3">
-              <label className="flex items-center gap-2 text-sm font-medium">
-                <Checkbox
-                  checked={petSplit}
-                  onCheckedChange={(c) => togglePetSplit(c === true)}
-                />
-                Repartir entre las mascotas
-              </label>
-              {petSplit && (
-                <>
-                  {pets.map((p) => (
-                    <div key={p.id} className="flex items-center gap-2">
-                      <span className="flex-1 text-sm">{p.name}</span>
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        min="0"
-                        className="w-24"
-                        value={petAmounts[p.id] ?? ""}
-                        onChange={(e) =>
-                          setPetAmounts((prev) => ({
-                            ...prev,
-                            [p.id]: e.target.value,
-                          }))
-                        }
-                      />
-                      <span className="text-xs text-muted-foreground">€</span>
-                    </div>
-                  ))}
-                  {Math.abs(petTotal - Number(amount)) > 0.01 && (
-                    <p className="text-xs text-amber-600">
-                      El reparto suma {eur(petTotal)}, el gasto es{" "}
-                      {eur(Number(amount) || 0)}
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          <Button onClick={save} disabled={saving}>
-            {saving ? "Guardando..." : "Guardar"}
-          </Button>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-col gap-2">
+          <Label>Importe (€)</Label>
+          <AmountInput
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
         </div>
-      </DialogContent>
-    </Dialog>
+        <div className="flex flex-col gap-2">
+          <Label>Fecha</Label>
+          <Input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Descripción</Label>
+        <Input
+          placeholder="Factura del gas, cena fuera…"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Categoría y subcategoría</Label>
+        <CategorySubcategorySelect
+          categories={categories}
+          subcategories={subcategories}
+          kind={type}
+          categoryId={categoryId || null}
+          subcategoryId={subcategoryId || null}
+          onChange={(cat, sub) => {
+            setCategoryId(cat ?? "");
+            setSubcategoryId(sub ?? "");
+          }}
+        />
+      </div>
+
+      {type === "expense" ? (
+        <div className="flex flex-col gap-1">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <Checkbox
+              checked={isFixed}
+              onCheckedChange={(c) => setIsFixed(c === true)}
+            />
+            Es un gasto fijo (recibo previsto)
+          </label>
+          <p className="pl-6 text-xs text-muted-foreground">
+            Descuenta igual del presupuesto de su categoría; esto solo marca
+            que es un recibo planificado, no un gasto variable.
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <Label>¿Corresponde a un ingreso recurrente?</Label>
+          <Select
+            value={recurringId}
+            items={{
+              "": "No, es extraordinario",
+              ...Object.fromEntries(
+                recurringIncomes.map((r) => [r.id, r.name])
+              ),
+            }}
+            onValueChange={(v) => setRecurringId(v ?? "")}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="No, es extraordinario" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">No, es extraordinario</SelectItem>
+              {recurringIncomes.map((r) => (
+                <SelectItem key={r.id} value={r.id}>
+                  {r.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Si no lo ligas, cuenta como ingreso extraordinario del mes.
+          </p>
+        </div>
+      )}
+
+      {type === "income" && (
+        <div className="flex flex-col gap-2">
+          <Label>De quién</Label>
+          <Select
+            value={profileId}
+            items={Object.fromEntries(
+              profiles.map((p) => [p.user_id, p.display_name])
+            )}
+            onValueChange={(v) => setProfileId(v ?? "")}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Familiar (opcional)" />
+            </SelectTrigger>
+            <SelectContent>
+              {profiles.map((p) => (
+                <SelectItem key={p.user_id} value={p.user_id}>
+                  {p.display_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {type === "expense" && pets.length > 0 && (
+        <div className="flex flex-col gap-3 rounded-lg border p-3">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <Checkbox
+              checked={petSplit}
+              onCheckedChange={(c) => togglePetSplit(c === true)}
+            />
+            Repartir entre las mascotas
+          </label>
+          {petSplit && (
+            <>
+              {pets.map((p) => (
+                <div key={p.id} className="flex items-center gap-2">
+                  <span className="flex-1 text-sm">{p.name}</span>
+                  <AmountInput
+                    className="w-24"
+                    value={petAmounts[p.id] ?? ""}
+                    onChange={(e) =>
+                      setPetAmounts((prev) => ({
+                        ...prev,
+                        [p.id]: e.target.value,
+                      }))
+                    }
+                  />
+                  <span className="text-xs text-muted-foreground">€</span>
+                </div>
+              ))}
+              {Number.isFinite(amountValue) &&
+                Math.abs(petTotal - amountValue) > 0.01 && (
+                  <p className="text-xs text-amber-600">
+                    El reparto suma {eur(petTotal)}, el gasto es{" "}
+                    {eur(amountValue || 0)}
+                  </p>
+                )}
+            </>
+          )}
+        </div>
+      )}
+
+      <Button onClick={save} disabled={saving}>
+        {saving ? "Guardando..." : "Guardar"}
+      </Button>
+    </div>
   );
 }

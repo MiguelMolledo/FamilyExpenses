@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { eur } from "@/lib/types";
+import { eur, parseAmount } from "@/lib/types";
+import { AmountInput } from "@/components/amount-input";
 import type { CategoryBudgetRow } from "@/lib/budget";
 import {
   Card,
@@ -14,7 +15,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -44,34 +44,49 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
 
   const toMonthly = (id: string, raw: string): string => {
     if (raw.trim() === "" || units[id] !== "year") return raw;
-    const n = Number(raw);
+    const n = parseAmount(raw);
     return Number.isFinite(n) ? (n / 12).toFixed(2) : raw;
   };
+
+  /** Valor a mostrar en el campo según la unidad activa (anual = mensual ×12) */
+  const displayValue = (id: string, monthly: number | null): string | number =>
+    monthly == null
+      ? ""
+      : (units[id] ?? "month") === "year"
+        ? Number((monthly * 12).toFixed(2))
+        : monthly;
 
   const UnitToggle = ({ id }: { id: string }) => (
     <button
       type="button"
       className="shrink-0 rounded-md border px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-muted"
       title="Cambia si el importe que escribes es mensual o anual (se guarda al mes)"
-      onClick={() =>
+      onClick={() => {
         setUnits((p) => ({
           ...p,
           [id]: (p[id] ?? "month") === "month" ? "year" : "month",
-        }))
-      }
+        }));
+        // El campo se remonta con el valor en la nueva unidad: fuera el borrador
+        setDrafts((p) => {
+          const q = { ...p };
+          delete q[id];
+          return q;
+        });
+      }}
     >
       {(units[id] ?? "month") === "month" ? "€/mes" : "€/año ÷12"}
     </button>
   );
 
   async function saveBudget(categoryId: string, raw: string) {
-    const value = raw.trim() === "" ? null : Number(raw);
+    const value = raw.trim() === "" ? null : parseAmount(raw);
     if (value != null && (!Number.isFinite(value) || value < 0)) return;
     const { error } = await createClient()
       .from("categories")
       .update({ monthly_budget: value })
       .eq("id", categoryId);
     if (error) return void toast.error("No se pudo guardar el presupuesto");
+    toast.success("Presupuesto guardado");
     router.refresh();
   }
 
@@ -81,17 +96,19 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
       .update({ rollover })
       .eq("id", categoryId);
     if (error) return void toast.error("No se pudo guardar");
+    toast.success("Guardado");
     router.refresh();
   }
 
   async function saveSubBudget(subId: string, raw: string) {
-    const value = raw.trim() === "" ? null : Number(raw);
+    const value = raw.trim() === "" ? null : parseAmount(raw);
     if (value != null && (!Number.isFinite(value) || value < 0)) return;
     const { error } = await createClient()
       .from("subcategories")
       .update({ monthly_budget: value })
       .eq("id", subId);
     if (error) return void toast.error("No se pudo guardar el desglose");
+    toast.success("Desglose guardado");
     router.refresh();
   }
 
@@ -135,18 +152,15 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
                   {r.category.name}
                 </button>
                 <UnitToggle id={r.category.id} />
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
+                <AmountInput
                   placeholder={
                     (units[r.category.id] ?? "month") === "month"
                       ? "€/mes"
                       : "€/año"
                   }
                   className="h-8 w-24 text-right text-sm"
-                  defaultValue={r.budget ?? ""}
-                  key={`${r.category.id}-${r.budget ?? ""}`}
+                  defaultValue={displayValue(r.category.id, r.budget)}
+                  key={`${r.category.id}-${r.budget ?? ""}-${units[r.category.id] ?? "month"}`}
                   onChange={(e) =>
                     setDrafts((p) => ({ ...p, [r.category.id]: e.target.value }))
                   }
@@ -223,14 +237,14 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
                       {sub.kind === "expense" && (
                         <>
                           <UnitToggle id={sub.id} />
-                          <Input
-                            type="number"
-                            inputMode="decimal"
-                            min="0"
+                          <AmountInput
                             placeholder="—"
                             className="h-7 w-20 text-right text-xs"
-                            defaultValue={sub.monthly_budget ?? ""}
-                            key={`${sub.id}-${sub.monthly_budget ?? ""}`}
+                            defaultValue={displayValue(
+                              sub.id,
+                              sub.monthly_budget
+                            )}
+                            key={`${sub.id}-${sub.monthly_budget ?? ""}-${units[sub.id] ?? "month"}`}
                             onChange={(e) =>
                               setDrafts((p) => ({ ...p, [sub.id]: e.target.value }))
                             }

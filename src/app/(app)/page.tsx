@@ -1,13 +1,16 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import {
+  addMonths,
   getCategoryBudgets,
   getMonthBudget,
   getYearOverview,
   monthEnd,
 } from "@/lib/budget";
-import { monthStart, eur, type Category } from "@/lib/types";
+import { currentMonthStart, eur, type Category } from "@/lib/types";
 import { MonthNav } from "@/components/movimientos/month-nav";
+import { TransactionDialog } from "@/components/movimientos/transaction-dialog";
+import { Button } from "@/components/ui/button";
 import { YearChart } from "@/components/dashboard/year-chart";
 import { ExpenseDistribution } from "@/components/dashboard/expense-distribution";
 import { IncomeAllocation } from "@/components/dashboard/income-allocation";
@@ -23,8 +26,10 @@ import {
 import {
   ArrowLeftRight,
   PiggyBank,
+  Plus,
   TrendingUp,
   TrendingDown,
+  TriangleAlert,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,18 +42,29 @@ export default async function DashboardPage({
   const { mes } = await searchParams;
   const month = /^\d{4}-\d{2}-01$/.test(mes ?? "")
     ? mes!
-    : monthStart(new Date());
+    : currentMonthStart();
   const year = Number(month.slice(0, 4));
   const monthIdx = Number(month.slice(5, 7)) - 1; // 0-based
 
-  const [budget, categoryBudgets, overview, savingsQ, categoriesQ] =
-    await Promise.all([
-      getMonthBudget(supabase, month),
-      getCategoryBudgets(supabase, month),
-      getYearOverview(supabase, year),
-      supabase.from("savings_movements").select("date, amount").order("date"),
-      supabase.from("categories").select("*"),
-    ]);
+  const [
+    budget,
+    categoryBudgets,
+    overview,
+    savingsQ,
+    categoriesQ,
+    subcategoriesQ,
+    petsQ,
+    profilesQ,
+  ] = await Promise.all([
+    getMonthBudget(supabase, month),
+    getCategoryBudgets(supabase, month),
+    getYearOverview(supabase, year),
+    supabase.from("savings_movements").select("date, amount").order("date"),
+    supabase.from("categories").select("*").order("name"),
+    supabase.from("subcategories").select("*").order("name"),
+    supabase.from("pets").select("*").order("created_at"),
+    supabase.from("profiles").select("*"),
+  ]);
 
   // Hucha: saldo actual, saldo al empezar el año y acumulado por mes
   const movements = (savingsQ.data ?? []).map((m) => ({
@@ -104,6 +120,18 @@ export default async function DashboardPage({
     month: "long",
   });
 
+  // Categorías en riesgo: pasadas de presupuesto o (sin acumulado anual) por
+  // encima del 80% — el dato ya viene calculado en categoryBudgets
+  const riskRows = categoryBudgets.rows
+    .filter((r) => {
+      if (r.budget == null || r.budget <= 0 || r.available == null)
+        return false;
+      if (r.available < 0) return true;
+      return r.category.rollover !== "accumulate" && r.spent / r.budget >= 0.8;
+    })
+    .sort((a, b) => (a.available ?? 0) - (b.available ?? 0))
+    .slice(0, 4);
+
   const annualMargin =
     overview.totals.expectedIncome - overview.totals.budgeted;
 
@@ -111,16 +139,44 @@ export default async function DashboardPage({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Hola 👋</h1>
-        <Link
-          href="/comparar"
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeftRight className="size-4" />
-          Comparar meses
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/comparar"
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeftRight className="size-4" />
+            Comparar
+          </Link>
+          <TransactionDialog
+            month={month}
+            categories={categoriesQ.data ?? []}
+            subcategories={subcategoriesQ.data ?? []}
+            recurringIncomes={budget.recurringIncomes}
+            pets={petsQ.data ?? []}
+            profiles={profilesQ.data ?? []}
+          >
+            <Button size="sm">
+              <Plus className="size-4" />
+              Añadir
+            </Button>
+          </TransactionDialog>
+        </div>
       </div>
 
       <MonthNav month={month} base="/" />
+
+      {!budget.prevClosed && budget.prevHasActivity && (
+        <Link
+          href={`/presupuesto?mes=${addMonths(month, -1)}`}
+          className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+        >
+          <TriangleAlert className="size-4 shrink-0" />
+          <span>
+            El mes anterior está sin cerrar y su sobrante no se arrastra. Toca
+            para cerrarlo.
+          </span>
+        </Link>
+      )}
 
       {/* Disponible este mes */}
       <Card
@@ -151,21 +207,50 @@ export default async function DashboardPage({
         </CardContent>
       </Card>
 
+      {/* Categorías al límite o pasadas: el detalle está en Presupuesto */}
+      {riskRows.length > 0 && (
+        <Link
+          href="/presupuesto"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-3 py-2 text-sm"
+        >
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <TriangleAlert className="size-4 text-amber-500" />
+            En riesgo:
+          </span>
+          {riskRows.map((r) => (
+            <span
+              key={r.category.id}
+              className={cn(
+                "font-medium",
+                (r.available ?? 0) < 0 ? "text-red-600" : "text-amber-600"
+              )}
+            >
+              {r.category.name}{" "}
+              {(r.available ?? 0) < 0
+                ? `−${eur(Math.abs(r.available ?? 0))}`
+                : `${Math.round((r.spent / (r.budget ?? 1)) * 100)}%`}
+            </span>
+          ))}
+        </Link>
+      )}
+
       {/* KPIs */}
       <div className="grid grid-cols-3 gap-2">
-        <Card>
-          <CardContent className="pt-4 pb-3 text-center">
-            <p className="text-xs text-muted-foreground capitalize">
-              Gastado {monthLabel}
-            </p>
-            <p className="text-lg font-bold text-red-600">
-              {eur(budget.realExpenses)}
-            </p>
-            <p className="text-[10px] text-muted-foreground">
-              presupuesto {eur(budget.budgeted)}
-            </p>
-          </CardContent>
-        </Card>
+        <Link href="/presupuesto">
+          <Card className="h-full">
+            <CardContent className="pt-4 pb-3 text-center">
+              <p className="text-xs text-muted-foreground capitalize">
+                Gastado {monthLabel}
+              </p>
+              <p className="text-lg font-bold text-red-600">
+                {eur(budget.realExpenses)}
+              </p>
+              <p className="text-[10px] text-muted-foreground">
+                presupuesto {eur(budget.budgeted)}
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
         <Link href="/hucha">
           <Card className="h-full">
             <CardContent className="pt-4 pb-3 text-center">

@@ -41,13 +41,14 @@ export function ChatFloat() {
   const finalTranscriptRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const { messages, sendMessage, status } = useChat();
+  const { messages, sendMessage, status, error, regenerate } = useChat();
   const busy = status === "submitted" || status === "streaming";
 
-  // Refresca los datos de la página cuando la IA termina (puede haber escrito en la DB)
+  // Refresca los datos de la página cuando la IA termina (puede haber escrito
+  // en la DB) — también si acaba en error: las tools pueden haber corrido antes
   const prevStatus = useRef(status);
   useEffect(() => {
-    if (prevStatus.current === "streaming" && status === "ready") {
+    if (prevStatus.current === "streaming" && status !== "streaming") {
       router.refresh();
     }
     prevStatus.current = status;
@@ -165,6 +166,18 @@ export function ChatFloat() {
               {busy && (
                 <div className="self-start rounded-2xl bg-muted px-3 py-2 text-sm animate-pulse">
                   …
+                </div>
+              )}
+              {status === "error" && (
+                <div className="self-start rounded-2xl bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <p>No he podido responder{error?.message ? ` (${error.message})` : ""}.</p>
+                  <button
+                    type="button"
+                    onClick={() => regenerate()}
+                    className="mt-1 font-medium underline underline-offset-2"
+                  >
+                    Reintentar
+                  </button>
                 </div>
               )}
             </div>

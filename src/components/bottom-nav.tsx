@@ -7,6 +7,7 @@ import {
   ArrowLeftRight,
   CalendarRange,
   PiggyBank,
+  GitCompareArrows,
   MoreHorizontal,
   PawPrint,
   FileUp,
@@ -30,6 +31,7 @@ const tabs = [
 
 const moreItems = [
   { href: "/paga", label: "Mi dinero", icon: Wallet },
+  { href: "/comparar", label: "Comparar meses", icon: GitCompareArrows },
   { href: "/mascotas", label: "Mascotas", icon: PawPrint },
   { href: "/importar", label: "Importar PDF", icon: FileUp },
   { href: "/ajustes", label: "Ajustes", icon: Settings },
