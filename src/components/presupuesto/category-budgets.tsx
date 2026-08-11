@@ -78,15 +78,35 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
     </button>
   );
 
-  async function saveBudget(categoryId: string, raw: string) {
-    const value = raw.trim() === "" ? null : parseAmount(raw);
+  /** Suma de los presupuestos asignados en el desglose de la categoría */
+  const subsBudgetSum = (row: CategoryBudgetRow): number =>
+    row.subRows.reduce(
+      (s, { sub }) =>
+        s + (sub.monthly_budget != null ? Number(sub.monthly_budget) : 0),
+      0
+    );
+
+  async function saveBudget(row: CategoryBudgetRow, raw: string) {
+    let value = raw.trim() === "" ? null : parseAmount(raw);
     if (value != null && (!Number.isFinite(value) || value < 0)) return;
+    // El desglose nunca puede sumar más que el total de la categoría: si lo
+    // tecleado se queda corto, el total sube a la suma del desglose
+    const subsSum = subsBudgetSum(row);
+    let adjusted = false;
+    if (value != null && subsSum > value + 0.005) {
+      value = Number(subsSum.toFixed(2));
+      adjusted = true;
+    }
     const { error } = await createClient()
       .from("categories")
       .update({ monthly_budget: value })
-      .eq("id", categoryId);
+      .eq("id", row.category.id);
     if (error) return void toast.error("No se pudo guardar el presupuesto");
-    toast.success("Presupuesto guardado");
+    toast.success(
+      adjusted
+        ? `El desglose suma ${eur(value!)}: el presupuesto se ajusta a esa cantidad`
+        : "Presupuesto guardado"
+    );
     router.refresh();
   }
 
@@ -100,14 +120,49 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
     router.refresh();
   }
 
-  async function saveSubBudget(subId: string, raw: string) {
+  async function saveSubBudget(
+    row: CategoryBudgetRow,
+    subId: string,
+    raw: string
+  ) {
     const value = raw.trim() === "" ? null : parseAmount(raw);
     if (value != null && (!Number.isFinite(value) || value < 0)) return;
-    const { error } = await createClient()
+    const supabase = createClient();
+    const { error } = await supabase
       .from("subcategories")
       .update({ monthly_budget: value })
       .eq("id", subId);
     if (error) return void toast.error("No se pudo guardar el desglose");
+
+    // Si con el cambio el desglose supera el presupuesto de la categoría,
+    // el presupuesto sube automáticamente a la suma del desglose
+    const newSum = row.subRows.reduce(
+      (s, { sub }) =>
+        s +
+        (sub.id === subId
+          ? (value ?? 0)
+          : sub.monthly_budget != null
+            ? Number(sub.monthly_budget)
+            : 0),
+      0
+    );
+    const catOwn =
+      row.category.monthly_budget != null
+        ? Number(row.category.monthly_budget)
+        : null;
+    if (catOwn != null && newSum > catOwn + 0.005) {
+      const { error: catError } = await supabase
+        .from("categories")
+        .update({ monthly_budget: Number(newSum.toFixed(2)) })
+        .eq("id", row.category.id);
+      if (!catError) {
+        toast.success(
+          `Desglose guardado: el presupuesto de ${row.category.name} sube a ${eur(newSum)}`
+        );
+        router.refresh();
+        return;
+      }
+    }
     toast.success("Desglose guardado");
     router.refresh();
   }
@@ -132,6 +187,13 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
             r.budget && r.budget > 0
               ? Math.min(100, (r.spent / r.budget) * 100)
               : 0;
+          const catOwn =
+            r.category.monthly_budget != null
+              ? Number(r.category.monthly_budget)
+              : null;
+          const subsSum = subsBudgetSum(r);
+          const unassigned =
+            catOwn != null && subsSum > 0 ? catOwn - subsSum : 0;
           return (
             <div key={r.category.id} className="flex flex-col gap-1.5 py-2.5">
               <div className="flex items-center gap-2">
@@ -167,7 +229,7 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
                   onBlur={() => {
                     const d = drafts[r.category.id];
                     if (d !== undefined && d !== String(r.budget ?? ""))
-                      saveBudget(r.category.id, toMonthly(r.category.id, d));
+                      saveBudget(r, toMonthly(r.category.id, d));
                   }}
                 />
               </div>
@@ -254,13 +316,21 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
                                 d !== undefined &&
                                 d !== String(sub.monthly_budget ?? "")
                               )
-                                saveSubBudget(sub.id, toMonthly(sub.id, d));
+                                saveSubBudget(r, sub.id, toMonthly(sub.id, d));
                             }}
                           />
                         </>
                       )}
                     </div>
                   ))}
+                  {unassigned > 0.005 && (
+                    <p
+                      className="pt-1 text-xs text-amber-600"
+                      title={`Presupuesto de la categoría ${eur(catOwn!)} − desglose asignado ${eur(subsSum)}`}
+                    >
+                      Te quedan {eur(unassigned)} por asignar en el desglose
+                    </p>
+                  )}
                 </div>
               )}
             </div>
