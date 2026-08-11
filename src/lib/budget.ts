@@ -76,6 +76,11 @@ export async function getMonthBudget(
   supabase: SupabaseClient,
   month: string
 ): Promise<MonthBudget> {
+  // Materializa los movimientos automáticos pendientes del mes (derrama, etc.)
+  // antes de leer: import diferido para no crear un ciclo de módulos
+  const { ensureAutoMovements } = await import("@/lib/auto-movements");
+  await ensureAutoMovements(supabase, month);
+
   const end = monthEnd(month);
   const prevMonth = addMonths(month, -1);
   const [

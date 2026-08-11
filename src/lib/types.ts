@@ -119,6 +119,17 @@ export type PersonalMovement = {
   note: string | null;
 };
 
+export type AutoMovement = {
+  id: string;
+  family_id: string;
+  name: string;
+  amount: number;
+  category_id: string | null;
+  subcategory_id: string | null;
+  starts_on: string;
+  ends_on: string | null;
+};
+
 export type MonthClosure = {
   family_id: string;
   month: string;

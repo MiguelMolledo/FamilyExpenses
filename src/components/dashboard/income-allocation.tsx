@@ -1,4 +1,8 @@
 import { eur } from "@/lib/types";
+import {
+  CategoryBreakdown,
+  type SubAmount,
+} from "@/components/dashboard/category-breakdown";
 
 const SLOTS = [
   "var(--viz-1)",
@@ -9,7 +13,12 @@ const SLOTS = [
   "var(--viz-6)",
 ];
 
-export type IncomeSlice = { name: string; amount: number };
+export type IncomeSlice = {
+  name: string;
+  amount: number;
+  /** desglose por subcategoría, para el popup al pasar el ratón o tocar */
+  subs?: SubAmount[];
+};
 
 /**
  * Sectores (donut SVG): qué % de los ingresos del mes va a cada categoría de
@@ -40,12 +49,31 @@ export function IncomeAllocation({
   );
 
   const slices = [
-    ...top.map((r) => ({ ...r, color: colorByName.get(r.name)! })),
+    ...top.map((r) => ({
+      name: r.name,
+      amount: r.amount,
+      subs: r.subs ?? [],
+      color: colorByName.get(r.name)!,
+    })),
     ...(restTotal > 0
-      ? [{ name: `Otros (${rest.length})`, amount: restTotal, color: "var(--viz-other)" }]
+      ? [
+          {
+            name: `Otros (${rest.length})`,
+            amount: restTotal,
+            subs: rest.map((r) => ({ name: r.name, amount: r.amount })),
+            color: "var(--viz-other)",
+          },
+        ]
       : []),
     ...(margin > 0
-      ? [{ name: "Margen (sin gastar)", amount: margin, color: "var(--muted)" }]
+      ? [
+          {
+            name: "Margen (sin gastar)",
+            amount: margin,
+            subs: [] as SubAmount[],
+            color: "var(--muted)",
+          },
+        ]
       : []),
   ];
   // Si se gasta más que los ingresos, el donut se dibuja sobre el gasto total
@@ -97,17 +125,26 @@ export function IncomeAllocation({
       </svg>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         {slices.map((s) => (
-          <div key={s.name} className="flex items-center gap-2 text-sm">
-            <span
-              className="size-2.5 shrink-0 rounded-full"
-              style={{ background: s.color }}
-            />
-            <span className="flex-1 truncate">{s.name}</span>
-            <span className="font-medium">{eur(s.amount)}</span>
-            <span className="w-10 shrink-0 text-right text-xs text-muted-foreground">
-              {Math.round((s.amount / income) * 100)}%
-            </span>
-          </div>
+          <CategoryBreakdown
+            key={s.name}
+            title={s.name}
+            total={s.amount}
+            subs={s.subs}
+            className="cursor-pointer"
+            popupClassName="left-auto right-0"
+          >
+            <div className="flex items-center gap-2 text-sm">
+              <span
+                className="size-2.5 shrink-0 rounded-full"
+                style={{ background: s.color }}
+              />
+              <span className="flex-1 truncate">{s.name}</span>
+              <span className="font-medium">{eur(s.amount)}</span>
+              <span className="w-10 shrink-0 text-right text-xs text-muted-foreground">
+                {Math.round((s.amount / income) * 100)}%
+              </span>
+            </div>
+          </CategoryBreakdown>
         ))}
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { eur } from "@/lib/types";
 import type { CategoryBudgetRow } from "@/lib/budget";
+import { CategoryBreakdown } from "@/components/dashboard/category-breakdown";
 
 /**
  * Capacidad de reacción: cuánto del gasto del mes está en categorías
@@ -30,15 +31,26 @@ export function ReactionCapacity({ rows }: { rows: CategoryBudgetRow[] }) {
       </div>
       <div className="flex flex-col gap-1 pt-1">
         {flexible.map((r) => (
-          <div key={r.category.id} className="flex items-center gap-2 text-sm">
-            <span className="flex-1 truncate text-muted-foreground">
-              {r.category.name}
-            </span>
-            <span className="font-medium">{eur(r.spent)}</span>
-            <span className="w-10 shrink-0 text-right text-xs text-muted-foreground">
-              {Math.round((r.spent / totalSpent) * 100)}%
-            </span>
-          </div>
+          <CategoryBreakdown
+            key={r.category.id}
+            title={r.category.name}
+            total={r.spent}
+            subs={r.subRows
+              .filter(({ spent }) => spent > 0)
+              .map(({ sub, spent }) => ({ name: sub.name, amount: spent }))
+              .sort((a, b) => b.amount - a.amount)}
+            className="cursor-pointer"
+          >
+            <div className="flex items-center gap-2 text-sm">
+              <span className="flex-1 truncate text-muted-foreground">
+                {r.category.name}
+              </span>
+              <span className="font-medium">{eur(r.spent)}</span>
+              <span className="w-10 shrink-0 text-right text-xs text-muted-foreground">
+                {Math.round((r.spent / totalSpent) * 100)}%
+              </span>
+            </div>
+          </CategoryBreakdown>
         ))}
         {flexible.length === 0 && (
           <p className="text-sm text-muted-foreground">

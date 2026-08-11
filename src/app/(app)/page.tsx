@@ -103,16 +103,31 @@ export default async function DashboardPage({
       .filter((c: Category) => c.exclude_from_stats)
       .map((c: Category) => c.id)
   );
+  const subNameById = new Map(
+    (subcategoriesQ.data ?? []).map((s) => [s.id as string, s.name as string])
+  );
   const byCategory = new Map<string, number>();
+  // Desglose por subcategoría de cada categoría: alimenta el popup de los
+  // gráficos (hover/toque sobre barras y leyendas)
+  const subsByCategory = new Map<string, Map<string, number>>();
   for (const t of budget.transactions) {
     if (t.type !== "expense") continue;
     if (t.category_id && excludedCats.has(t.category_id)) continue;
     const name = catById.get(t.category_id ?? "") ?? "Sin categoría";
     byCategory.set(name, (byCategory.get(name) ?? 0) + t.amount);
+    const subName =
+      (t.subcategory_id && subNameById.get(t.subcategory_id)) ||
+      "Sin subcategoría";
+    const subMap = subsByCategory.get(name) ?? new Map<string, number>();
+    subMap.set(subName, (subMap.get(subName) ?? 0) + t.amount);
+    subsByCategory.set(name, subMap);
   }
   const categoryRows = [...byCategory.entries()].map(([name, amount]) => ({
     name,
     amount,
+    subs: [...(subsByCategory.get(name) ?? new Map<string, number>())]
+      .map(([n, a]) => ({ name: n, amount: a }))
+      .sort((a, b) => b.amount - a.amount),
   }));
   const fixedSpent = budget.realExpenses - budget.extraExpenses;
 
