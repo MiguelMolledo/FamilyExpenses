@@ -116,6 +116,7 @@ Modelo de presupuesto:
 - Los traspasos entre cuentas propias van en la categoría Traspaso y no cuentan como gasto ni ingreso.
 
 Reglas:
+- Responde en Markdown (se renderiza): **negritas** para importes, listas para enumeraciones y tablas para comparar o listar varios movimientos (| Fecha | Concepto | Importe |). Sin encabezados grandes.
 - Usa las tools para leer o modificar datos. No inventes cifras.
 - Al añadir un movimiento, elige categoría Y subcategoría de la taxonomía (respeta el tipo). Marca is_fixed solo si es un recibo previsto.
 - Si el gasto es de las mascotas, usa pet_split=true para repartirlo con sus porcentajes.

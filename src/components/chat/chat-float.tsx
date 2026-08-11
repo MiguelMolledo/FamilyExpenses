@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { MessageCircle, Mic, MicOff, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -149,7 +151,17 @@ export function ChatFloat() {
                 >
                   {m.parts.map((part, i) => {
                     if (part.type === "text")
-                      return <span key={i}>{part.text}</span>;
+                      // El texto del asistente llega en Markdown (negritas,
+                      // listas, tablas); el del usuario se muestra tal cual
+                      return m.role === "assistant" ? (
+                        <div key={i} className="chat-md">
+                          <Markdown remarkPlugins={[remarkGfm]}>
+                            {part.text}
+                          </Markdown>
+                        </div>
+                      ) : (
+                        <span key={i}>{part.text}</span>
+                      );
                     if (part.type.startsWith("tool-"))
                       return (
                         <span
