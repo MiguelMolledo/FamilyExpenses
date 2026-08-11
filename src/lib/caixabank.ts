@@ -162,6 +162,9 @@ function parseFullSheet(rows: unknown[][]): ParsedMovement[] | null {
     income: header.indexOf("ingreso (+)"),
     expense: header.indexOf("gasto (-)"),
     concept: header.indexOf("concepto complementario 1"),
+    // En transferencias, el concepto que escribe quien la hace ("psicóloga
+    // agosto") cae en el complementario 5; sin él no se sabe qué es el gasto
+    note: header.indexOf("concepto complementario 5"),
     operation: header.indexOf("concepto complementario 9"),
   };
   if (col.income === -1 || col.expense === -1 || col.concept === -1) return null;
@@ -184,12 +187,13 @@ function parseFullSheet(rows: unknown[][]): ParsedMovement[] | null {
 
     // Descripción sin referencias: fuera cualquier token con 6+ dígitos
     // (contratos, pólizas, recibos) — es lo único que sale hacia la IA.
-    let description = concept
-      .replace(OP_DATE_RE, "")
-      .split(/\s+/)
-      .filter((t) => (t.match(/\d/g)?.length ?? 0) < 6)
-      .join(" ")
-      .trim();
+    const stripRefs = (s: string) =>
+      s
+        .split(/\s+/)
+        .filter((t) => (t.match(/\d/g)?.length ?? 0) < 6)
+        .join(" ")
+        .trim();
+    let description = stripRefs(concept.replace(OP_DATE_RE, ""));
     if (!description) {
       // Sin comercio/beneficiario: etiqueta del tipo de operación
       // ("04400069PRS  VTO. PRESTAMO" → "VTO. PRESTAMO")
@@ -198,6 +202,13 @@ function parseFullSheet(rows: unknown[][]): ParsedMovement[] | null {
         .replace(/^\S+\s+/, "")
         .replace(/\s+/g, " ")
         .trim();
+    }
+    // El concepto libre de la transferencia (complementario 5) se añade al
+    // final: "BLANCA MOLLEDO · psicóloga agosto". El beneficiario va primero
+    // para que las reglas aprendidas sigan matcheando por él.
+    const note = stripRefs(String(row[col.note] ?? "").replace(/\s+/g, " "));
+    if (note && !description.toLowerCase().includes(note.toLowerCase())) {
+      description = description ? `${description} · ${note}` : note;
     }
     if (!description) continue;
 
