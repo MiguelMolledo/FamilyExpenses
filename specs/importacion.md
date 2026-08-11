@@ -13,9 +13,10 @@ Importar movimientos desde extractos de CaixaBank (PDF o Excel .xls) con categor
 - El borrador sobrevive a la navegación (localStorage) hasta importar o cancelar.
 - El commit valida que categoría/subcategoría pertenezcan a la familia y sean coherentes entre sí, e inserta todo el lote en un solo upsert (los duplicados residuales se ignoran por el constraint único `family_id+dedup_hash`).
 
-## Restricciones
+- Los ingresos también se importan: cada fila de ingreso lleva un selector «¿Corresponde a…?» para vincularla a un ingreso recurrente (vinculada sustituye al previsto en el mes — no cuenta doble; sin vincular entra como extraordinario). El vínculo se sugiere cuando el importe coincide con el recurrente activo. Las nóminas que no se quieran registrar se desmarcan.
+- En el formato largo, el concepto libre de las transferencias (Concepto complementario 5, «psicóloga agosto») se añade a la descripción tras el beneficiario.
 
-- El formato largo de Excel solo importa gastos.
+## Restricciones
 - El parser de PDF no está validado con un PDF real todavía (el de Excel sí, 2026-08-06).
 - Las descripciones que salen hacia la IA van sin tokens de 6+ dígitos (contratos, referencias).
 

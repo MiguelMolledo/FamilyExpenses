@@ -15,6 +15,9 @@ Modelo de sobres puro: nada se provisiona por adelantado; solo el gasto real ata
 - Comparar meses: dos selectores sobre todo el histórico; resumen de KPIs y gasto por categoría con el presupuesto del mes B como referencia.
 - Las categorías `exclude_from_stats` (Traspaso) no cuentan como ingreso ni gasto.
 - Desde Inicio se puede añadir un movimiento sin cambiar de página.
+- El desglose por subcategorías nunca suma más que el total de su categoría (el total sube solo si el desglose lo supera); si se queda corto, aviso «te quedan X por asignar».
+- Movimientos automáticos (Ajustes): gastos reales mensuales que no pasan por la cuenta común (p.ej. la derrama que paga un miembro aparte) se materializan solos el día 1 como gasto fijo; el ingreso previsto correspondiente se registra por el importe completo. Si se borra el generado de un mes, no reaparece; los meses cerrados no se tocan.
+- En los gráficos de Inicio (distribución, ingresos, capacidad de reacción), pasar el ratón o tocar una categoría muestra su desglose por subcategoría.
 
 ## Restricciones
 
