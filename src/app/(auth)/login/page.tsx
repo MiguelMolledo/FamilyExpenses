@@ -17,22 +17,34 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function signIn(email: string, pass: string): Promise<boolean> {
     setError(null);
     setLoading(true);
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({
-      email: usernameToEmail(username),
-      password,
+      email,
+      password: pass,
     });
     if (error) {
-      setError("Usuario o contraseña incorrectos");
       setLoading(false);
-      return;
+      return false;
     }
     router.push("/");
     router.refresh();
+    return true;
+  }
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const ok = await signIn(usernameToEmail(username), password);
+    if (!ok) setError("Usuario o contraseña incorrectos");
+  }
+
+  // Cuenta pública de ejemplo: familia "Ejemplo" con presupuesto de IA de
+  // 1 €/mes (capado en servidor). Las credenciales son públicas a propósito.
+  async function tryExample() {
+    const ok = await signIn(usernameToEmail("ejemplo"), "ejemplo1234");
+    if (!ok) setError("La cuenta de ejemplo no está disponible ahora mismo");
   }
 
   return (
@@ -65,10 +77,18 @@ export default function LoginPage() {
           <Button type="submit" disabled={loading}>
             {loading ? "Entrando..." : "Entrar"}
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={loading}
+            onClick={tryExample}
+          >
+            Probar la app (cuenta de ejemplo)
+          </Button>
           <p className="text-center text-sm text-muted-foreground">
-            ¿Primera vez?{" "}
+            ¿Tienes un código de invitación?{" "}
             <Link href="/signup" className="underline">
-              Crea tu familia
+              Únete a tu familia
             </Link>
           </p>
         </form>

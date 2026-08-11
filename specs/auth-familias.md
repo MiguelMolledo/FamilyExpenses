@@ -4,8 +4,9 @@ Usuarios con username + contraseña (sin email real) agrupados en familias. Todo
 
 ## Capacidades
 
-- Registro SOLO por invitación: hace falta el código de una familia existente (el código se valida antes de crear la cuenta, sin dejar usuarios huérfanos). Login con username y contraseña.
+- Registro SOLO por invitación: hace falta el código de una familia existente (el código se valida antes de crear la cuenta, sin dejar usuarios huérfanos). Login con username y contraseña. El enlace `/signup?codigo=XXXX` llega con el código ya puesto.
 - Las familias nuevas se crean a mano (`create_family` vía psql/service_role); la app no expone esa opción.
+- El login tiene un botón «Probar la app (cuenta de ejemplo)»: entra como `ejemplo` en la Familia Ejemplo, una sandbox pública con presupuesto de IA de 1 €/mes (ver [chat](./chat.md)). La Familia Demo (`demo`/`blancademo`) queda para uso interno, sin límite.
 - El username se normaliza (minúsculas, sin acentos ni símbolos, mínimo 3 caracteres) y se convierte en pseudo-email `@familyexpenses.local` para Supabase Auth; el formulario avisa si lo tecleado se normalizará.
 - Todos los miembros de la familia ven y editan los mismos datos (movimientos, presupuestos, hucha…).
 - El middleware (`proxy.ts`) redirige a /login sin sesión y expulsa de /login a quien ya la tiene (/signup queda accesible para completar registros a medias).

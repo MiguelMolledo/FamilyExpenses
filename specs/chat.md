@@ -15,6 +15,7 @@ Asistente IA flotante disponible en toda la app (botón burbuja), pensado para a
 ## Restricciones
 
 - Modelo vía OpenRouter (`OPENROUTER_MODEL`, por defecto claude-haiku-4.5; la demo usa gpt-5.6-luna). Máximo 8 pasos de tools por turno.
+- Presupuesto de IA por familia (`families.chat_budget_cents`, null = sin límite; la Familia Ejemplo lleva 100 = 1 €/mes). El coste se estima por tokens (precios configurables con `OPENROUTER_PRICE_IN_USD_PER_M` / `OPENROUTER_PRICE_OUT_USD_PER_M`, suelo de 0,2 cts/petición) y se acumula en `chat_usage` vía `record_chat_usage` (solo suma: un invitado no puede resetear el contador ni subirse el tope). Al agotarse: 429 con mensaje claro y el resto de la app sigue funcionando.
 - «Hoy» y «mes actual» se calculan en Europe/Madrid.
 - El historial del chat vive en memoria: se pierde al recargar la página.
 

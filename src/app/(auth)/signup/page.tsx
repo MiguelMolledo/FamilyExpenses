@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -20,6 +20,12 @@ export default function SignupPage() {
   const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Enlace de invitación: /signup?codigo=XXXX deja el código ya puesto
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("codigo");
+    if (code) setInviteCode(code);
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();

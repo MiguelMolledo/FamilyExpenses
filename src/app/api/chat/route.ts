@@ -36,6 +36,28 @@ export async function POST(req: Request) {
   const today = todayMadrid();
   const month = currentMonthStart();
 
+  // Presupuesto de IA de la familia (p.ej. la cuenta de ejemplo va capada a
+  // 1 €/mes). El gasto se acumula en chat_usage vía record_chat_usage.
+  const { data: fam } = await supabase
+    .from("families")
+    .select("chat_budget_cents")
+    .single();
+  const capCents =
+    fam?.chat_budget_cents == null ? null : Number(fam.chat_budget_cents);
+  if (capCents != null) {
+    const { data: used } = await supabase
+      .from("chat_usage")
+      .select("cents")
+      .eq("month", month)
+      .maybeSingle();
+    if (Number(used?.cents ?? 0) >= capCents) {
+      return new Response(
+        `Esta cuenta ha agotado su presupuesto de IA del mes (${(capCents / 100).toFixed(2)} €). El resto de la app sigue funcionando.`,
+        { status: 429 }
+      );
+    }
+  }
+
   // Contexto de la familia para que el modelo resuelva nombres sin adivinar
   const [categoriesQ, subcategoriesQ, recurringIncQ, petsQ, profilesQ] =
     await Promise.all([
@@ -106,6 +128,19 @@ Reglas:
     system,
     messages: await convertToModelMessages(messages),
     stopWhen: stepCountIs(8),
+    onFinish: async ({ totalUsage }) => {
+      // Coste estimado por tokens (precios en USD/M configurables por env),
+      // con un suelo por petición por si el proveedor no reporta tokens.
+      const inTok = totalUsage?.inputTokens ?? 0;
+      const outTok = totalUsage?.outputTokens ?? 0;
+      const priceIn = Number(process.env.OPENROUTER_PRICE_IN_USD_PER_M ?? "0.5");
+      const priceOut = Number(process.env.OPENROUTER_PRICE_OUT_USD_PER_M ?? "2");
+      const usd = (inTok * priceIn + outTok * priceOut) / 1_000_000;
+      const cents = Math.max(usd * 100, 0.2);
+      await supabase.rpc("record_chat_usage", {
+        amount_cents: Number(cents.toFixed(2)),
+      });
+    },
     tools: {
       add_expense: tool({
         description:
