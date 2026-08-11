@@ -91,7 +91,7 @@ export async function POST(req: Request) {
   // con otro texto, p.ej. el mismo recibo en el Excel corto y el largo).
   const minDate = movements.reduce((a, m) => (m.date < a ? m.date : a), "9999");
   const maxDate = movements.reduce((a, m) => (m.date > a ? m.date : a), "0000");
-  const [rulesQ, rangeQ, categoriesQ, subcategoriesQ, fixedTxQ] =
+  const [rulesQ, rangeQ, categoriesQ, subcategoriesQ, fixedTxQ, recIncQ] =
     await Promise.all([
       supabase
         .from("category_rules")
@@ -112,6 +112,13 @@ export async function POST(req: Request) {
         .not("subcategory_id", "is", null)
         .order("date", { ascending: false })
         .limit(1000),
+      // Ingresos recurrentes activos en el rango: para vincular las nóminas
+      // del extracto (vinculado = sustituye al previsto, no cuenta doble)
+      supabase
+        .from("recurring_incomes")
+        .select("id, name, amount")
+        .lte("starts_on", maxDate)
+        .or(`ends_on.is.null,ends_on.gte.${minDate}`),
     ]);
 
   const rules = (rulesQ.data ?? []).sort(
@@ -140,6 +147,7 @@ export async function POST(req: Request) {
   });
   const categories = categoriesQ.data ?? [];
   const subcategories = subcategoriesQ.data ?? [];
+  const recurringIncomes = recIncQ.data ?? [];
   const subById = new Map(subcategories.map((s) => [s.id, s]));
   // Subcats con recibos previstos en el histórico: pista para el checkbox
   const fixedSubIds = new Set(
@@ -165,12 +173,21 @@ export async function POST(req: Request) {
         softCount.set(k, left - 1);
       }
     }
+    // Nómina/alquiler del extracto: si el importe clava el de un ingreso
+    // recurrente activo, se sugiere el vínculo (el usuario puede cambiarlo)
+    const suggestedRec =
+      m.type === "income"
+        ? recurringIncomes.find(
+            (r) => Math.abs(Number(r.amount) - m.amount) < 0.005
+          )
+        : undefined;
     return {
       ...m,
       dedup_hash: hashes[i],
       exact_duplicate: exactDup[i],
       category_id: sub?.category_id ?? rule?.category_id ?? null,
       subcategory_id: rule?.subcategory_id ?? null,
+      recurring_income_id: suggestedRec?.id ?? null,
       is_fixed:
         m.type === "expense" &&
         !!rule?.subcategory_id &&
@@ -259,6 +276,7 @@ export async function POST(req: Request) {
     rows,
     categories,
     subcategories,
+    recurringIncomes,
     fileName: file.name,
   });
 }

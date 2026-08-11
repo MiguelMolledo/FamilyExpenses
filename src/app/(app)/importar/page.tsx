@@ -4,12 +4,24 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { FileUp, Loader2, Sparkles } from "lucide-react";
-import { eur, type Category, type Subcategory } from "@/lib/types";
+import {
+  eur,
+  type Category,
+  type RecurringIncome,
+  type Subcategory,
+} from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { CategorySubcategorySelect } from "@/components/category-select";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +32,8 @@ type Row = {
   type: "expense" | "income";
   category_id: string | null;
   subcategory_id: string | null;
+  /** nómina/alquiler al que corresponde (solo ingresos); null = extraordinario */
+  recurring_income_id: string | null;
   is_fixed: boolean;
   dedup_hash: string;
   duplicate: boolean;
@@ -33,6 +47,7 @@ type Draft = {
   rows: Row[];
   categories: Category[];
   subcategories: Subcategory[];
+  recurringIncomes: RecurringIncome[];
   fileName: string;
 };
 
@@ -45,6 +60,9 @@ export default function ImportarPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  const [recurringIncomes, setRecurringIncomes] = useState<RecurringIncome[]>(
+    []
+  );
   const [fileName, setFileName] = useState("");
   const [parsing, setParsing] = useState(false);
   const [committing, setCommitting] = useState(false);
@@ -59,6 +77,7 @@ export default function ImportarPage() {
           setRows(draft.rows);
           setCategories(draft.categories ?? []);
           setSubcategories(draft.subcategories ?? []);
+          setRecurringIncomes(draft.recurringIncomes ?? []);
           setFileName(draft.fileName ?? "");
         }
       }
@@ -76,9 +95,15 @@ export default function ImportarPage() {
     }
     localStorage.setItem(
       DRAFT_KEY,
-      JSON.stringify({ rows, categories, subcategories, fileName } satisfies Draft)
+      JSON.stringify({
+        rows,
+        categories,
+        subcategories,
+        recurringIncomes,
+        fileName,
+      } satisfies Draft)
     );
-  }, [restored, rows, categories, subcategories, fileName]);
+  }, [restored, rows, categories, subcategories, recurringIncomes, fileName]);
 
   async function onFile(file: File) {
     setParsing(true);
@@ -101,6 +126,7 @@ export default function ImportarPage() {
       setRows(data.rows ?? []);
       setCategories(data.categories ?? []);
       setSubcategories(data.subcategories ?? []);
+      setRecurringIncomes(data.recurringIncomes ?? []);
       setFileName(data.fileName ?? file.name);
     } catch {
       toast.error("Fallo de red al subir el extracto. Vuelve a intentarlo.");
@@ -147,6 +173,7 @@ export default function ImportarPage() {
             type: r.type,
             category_id: r.category_id,
             subcategory_id: r.subcategory_id,
+            recurring_income_id: r.recurring_income_id ?? null,
             is_fixed: r.is_fixed,
             dedup_hash: r.dedup_hash,
           })),
@@ -333,6 +360,39 @@ export default function ImportarPage() {
                       />
                       Gasto fijo (recibo previsto; si no, cuenta como variable)
                     </label>
+                  )}
+                  {row.type === "income" && recurringIncomes.length > 0 && (
+                    <div className="flex items-center gap-2 pl-7 text-xs">
+                      <span className="text-muted-foreground">
+                        ¿Corresponde a…?
+                      </span>
+                      <Select
+                        value={row.recurring_income_id ?? ""}
+                        items={{
+                          "": "Extraordinario",
+                          ...Object.fromEntries(
+                            recurringIncomes.map((r) => [r.id, r.name])
+                          ),
+                        }}
+                        onValueChange={(v) =>
+                          update(i, { recurring_income_id: v || null })
+                        }
+                      >
+                        <SelectTrigger className="h-7 w-fit text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">
+                            Extraordinario (devolución, regalo…)
+                          </SelectItem>
+                          {recurringIncomes.map((r) => (
+                            <SelectItem key={r.id} value={r.id}>
+                              {r.name} (sustituye al previsto)
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   )}
                 </CardContent>
               </Card>

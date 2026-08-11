@@ -13,6 +13,7 @@ const BodySchema = z.object({
         type: z.enum(["expense", "income"]),
         category_id: z.string().uuid().nullable(),
         subcategory_id: z.string().uuid().nullable().default(null),
+        recurring_income_id: z.string().uuid().nullable().default(null),
         is_fixed: z.boolean().default(false),
         dedup_hash: z.string(),
       })
@@ -42,12 +43,14 @@ export async function POST(req: Request) {
   // Los UUIDs de categoría vienen del cliente: se validan contra la taxonomía
   // de la familia (el FK no comprueba pertenencia, y un par categoría/subcat
   // incoherente descuadraría los presupuestos y se "aprendería" como regla).
-  const [catsQ, subsQ] = await Promise.all([
+  const [catsQ, subsQ, recIncQ] = await Promise.all([
     supabase.from("categories").select("id"),
     supabase.from("subcategories").select("id, category_id"),
+    supabase.from("recurring_incomes").select("id"),
   ]);
   const catIds = new Set((catsQ.data ?? []).map((c) => c.id));
   const subById = new Map((subsQ.data ?? []).map((s) => [s.id, s.category_id]));
+  const recIncIds = new Set((recIncQ.data ?? []).map((r) => r.id));
   for (const row of rows) {
     if (row.category_id && !catIds.has(row.category_id)) {
       return Response.json({ error: "Categoría no válida" }, { status: 400 });
@@ -58,6 +61,13 @@ export async function POST(req: Request) {
         return Response.json({ error: "Subcategoría no válida" }, { status: 400 });
       }
       row.category_id = catOfSub;
+    }
+    if (row.type !== "income") row.recurring_income_id = null;
+    if (row.recurring_income_id && !recIncIds.has(row.recurring_income_id)) {
+      return Response.json(
+        { error: "Ingreso recurrente no válido" },
+        { status: 400 }
+      );
     }
   }
 
@@ -84,10 +94,12 @@ export async function POST(req: Request) {
         type: row.type,
         category_id: row.category_id,
         subcategory_id: row.subcategory_id,
+        recurring_income_id: row.recurring_income_id,
         is_fixed: row.type === "expense" && row.is_fixed,
         import_batch_id: batch.id,
         dedup_hash: row.dedup_hash,
-        is_extraordinary: false,
+        // Ingreso sin vincular a un recurrente = extraordinario del mes
+        is_extraordinary: row.type === "income" && !row.recurring_income_id,
       })),
       { onConflict: "family_id,dedup_hash", ignoreDuplicates: true }
     )

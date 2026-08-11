@@ -97,8 +97,9 @@ const normCell = (s: unknown) =>
  * Parser de los exports Excel de CaixaBank (.xls). Hay dos formatos:
  * - Corto (rangos recientes): Fecha | Fecha valor | Movimiento | Más datos | Importe.
  * - Largo (rangos amplios): Número de cuenta | Oficina | ... | Ingreso (+) |
- *   Gasto (-) | Saldos | Conceptos complementarios 1-10. De este solo se
- *   extraen fecha, concepto e importe; cuenta, saldos y referencias se descartan.
+ *   Gasto (-) | Saldos | Conceptos complementarios 1-10. Se extraen fecha,
+ *   concepto e importe de gastos E ingresos; cuenta, saldos y referencias se
+ *   descartan.
  */
 export function parseCaixabankSheet(rows: unknown[][]): ParsedMovement[] {
   return parseShortSheet(rows) ?? parseFullSheet(rows) ?? [];
@@ -171,10 +172,11 @@ function parseFullSheet(rows: unknown[][]): ParsedMovement[] | null {
 
   const movements: ParsedMovement[] = [];
   for (const row of rows.slice(headerIdx + 1)) {
-    // Solo gastos: los ingresos de este formato no se importan
     const expense = row[col.expense];
+    const income = row[col.income];
     const isExpense = typeof expense === "number" && expense !== 0;
-    if (!isExpense) continue;
+    const isIncome = typeof income === "number" && income !== 0;
+    if (!isExpense && !isIncome) continue;
 
     const concept = String(row[col.concept] ?? "");
     // En tarjeta, el concepto trae la fecha real de la compra como prefijo;
@@ -215,8 +217,8 @@ function parseFullSheet(rows: unknown[][]): ParsedMovement[] | null {
     movements.push({
       date,
       description,
-      amount: Math.abs(expense),
-      type: "expense",
+      amount: Math.abs(isExpense ? (expense as number) : (income as number)),
+      type: isExpense ? "expense" : "income",
     });
   }
   return movements;
