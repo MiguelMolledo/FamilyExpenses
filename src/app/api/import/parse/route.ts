@@ -30,6 +30,13 @@ export async function POST(req: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return new Response("No autorizado", { status: 401 });
+  // Solo miembros de una familia (la 2ª pasada del parse invoca a la IA)
+  const { data: me } = await supabase
+    .from("profiles")
+    .select("family_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!me) return new Response("Sin familia", { status: 403 });
 
   const form = await req.formData();
   const file = form.get("file");
