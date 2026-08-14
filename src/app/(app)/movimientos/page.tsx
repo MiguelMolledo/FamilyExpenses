@@ -1,12 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { getMonthBudget, monthEnd } from "@/lib/budget";
-import { currentMonthStart, eur } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { currentMonthStart } from "@/lib/types";
 import { MonthNav } from "@/components/movimientos/month-nav";
+import { MonthSummary } from "@/components/movimientos/month-summary";
 import { TransactionsList } from "@/components/movimientos/transactions-list";
 import { TransactionDialog } from "@/components/movimientos/transaction-dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Plus } from "lucide-react";
 
 export default async function MovimientosPage({
@@ -55,33 +54,7 @@ export default async function MovimientosPage({
 
       <MonthNav month={month} />
 
-      <Card>
-        <CardContent className="grid grid-cols-3 gap-2 pt-6 text-center">
-          <div>
-            <p className="text-xs text-muted-foreground">Ingresos</p>
-            <p className="font-semibold text-green-600">
-              {eur(budget.realIncome)}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Gastado</p>
-            <p className="font-semibold text-red-600">
-              {eur(budget.realExpenses)}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Disponible</p>
-            <p
-              className={cn(
-                "font-semibold",
-                budget.available >= 0 ? "text-green-600" : "text-red-600"
-              )}
-            >
-              {eur(budget.available)}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <MonthSummary budget={budget} />
 
       <TransactionsList
         transactions={budget.transactions}

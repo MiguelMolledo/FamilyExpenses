@@ -62,6 +62,10 @@ export type MonthBudget = {
   month: string;
   expectedIncome: number;
   realIncome: number;
+  /** parte recurrente de realIncome: vinculados por su importe real, el resto por el previsto */
+  receivedIncome: number;
+  /** ingresos sin vincular a recurrente (devoluciones, extras) */
+  extraordinaryIncome: number;
   /** referencia del mes: suma de presupuestos por categoría + objetivo de ahorro */
   budgeted: number;
   savingsTarget: number;
@@ -199,6 +203,8 @@ export async function getMonthBudget(
     month,
     expectedIncome,
     realIncome,
+    receivedIncome,
+    extraordinaryIncome,
     budgeted,
     savingsTarget,
     realExpenses,
