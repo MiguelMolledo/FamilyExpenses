@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Pencil } from "lucide-react";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { deleteRow } from "@/lib/delete-row";
 import { addMonths, monthEnd } from "@/lib/budget";
 import { eur, parseAmount, type Profile, type RecurringIncome } from "@/lib/types";
 import { AmountInput } from "@/components/amount-input";
@@ -122,6 +123,7 @@ function IncomeDialog({
   // Mes elegido a mano (primer día): al crear, el mes que estás viendo
   const [since, setSince] = useState(income ? addMonths(month, 1) : month);
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   async function save() {
     if (!name.trim() || !parseAmount(amount)) {
@@ -183,6 +185,16 @@ function IncomeDialog({
     router.refresh();
   }
 
+  async function remove() {
+    setSaving(true);
+    const { error } = await deleteRow("recurring_incomes", income!.id);
+    setSaving(false);
+    if (error) return void toast.error("No se pudo eliminar");
+    toast.success("Ingreso eliminado");
+    setOpen(false);
+    router.refresh();
+  }
+
   async function finish() {
     setSaving(true);
     const { error } = await createClient()
@@ -197,7 +209,13 @@ function IncomeDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setConfirmDelete(false);
+      }}
+    >
       <DialogTrigger render={children} />
       <DialogContent className="max-w-sm">
         <DialogHeader>
@@ -314,6 +332,26 @@ function IncomeDialog({
               Finalizar este ingreso
             </Button>
           )}
+          {income &&
+            (confirmDelete ? (
+              <Button
+                variant="destructive"
+                onClick={remove}
+                disabled={saving}
+              >
+                ¿Seguro? Se borra de todos los meses
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                className="text-red-600 hover:text-red-600"
+                onClick={() => setConfirmDelete(true)}
+                disabled={saving}
+              >
+                <Trash2 className="size-4" />
+                Eliminar
+              </Button>
+            ))}
         </div>
       </DialogContent>
     </Dialog>
