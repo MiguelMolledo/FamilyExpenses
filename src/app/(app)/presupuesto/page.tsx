@@ -2,12 +2,12 @@ import Link from "next/link";
 import { TriangleAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCategoryBudgets, getMonthBudget, addMonths } from "@/lib/budget";
+import { BudgetSummary } from "@/components/presupuesto/budget-summary";
 import { CategoryBudgets } from "@/components/presupuesto/category-budgets";
-import { currentMonthStart, eur } from "@/lib/types";
+import { currentMonthStart } from "@/lib/types";
 import { RecurringIncomes } from "@/components/presupuesto/recurring-incomes";
 import { CloseMonth } from "@/components/presupuesto/close-month";
 import { MonthNav } from "@/components/movimientos/month-nav";
-import { Card, CardContent } from "@/components/ui/card";
 
 export default async function PresupuestoPage({
   searchParams,
@@ -43,28 +43,7 @@ export default async function PresupuestoPage({
         </Link>
       )}
 
-      <Card>
-        <CardContent className="grid grid-cols-3 gap-2 pt-6 text-center">
-          <div>
-            <p className="text-xs text-muted-foreground">Ingresos previstos</p>
-            <p className="font-semibold text-green-600">
-              {eur(budget.expectedIncome)}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Presupuesto</p>
-            <p className="font-semibold text-amber-600">
-              {eur(budget.budgeted)}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Margen previsto</p>
-            <p className="font-semibold">
-              {eur(budget.expectedIncome - budget.budgeted)}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <BudgetSummary budget={budget} />
 
       <CategoryBudgets rows={categoryBudgets.rows} />
 
