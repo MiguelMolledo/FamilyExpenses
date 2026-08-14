@@ -170,6 +170,11 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
   const totalBudget = rows.reduce((s, r) => s + (r.budget ?? 0), 0);
   const totalSpent = rows.reduce((s, r) => s + r.spent, 0);
 
+  // Mayor presupuesto arriba; sin presupuesto (o a cero) al final
+  const sortedRows = [...rows].sort(
+    (a, b) => (b.budget ?? 0) - (a.budget ?? 0)
+  );
+
   return (
     <Card>
       <CardHeader>
@@ -181,7 +186,7 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col divide-y">
-        {rows.map((r) => {
+        {sortedRows.map((r) => {
           const over = r.available != null && r.available < 0;
           const pct =
             r.budget && r.budget > 0
