@@ -118,12 +118,21 @@ function IncomeDialog({
     income?.type ?? "salary"
   );
   const [profileId, setProfileId] = useState(income?.profile_id ?? "");
-  const [effective, setEffective] = useState<"now" | "next">("next");
+  const [effective, setEffective] = useState<"now" | "next" | "custom">("next");
+  // Mes elegido a mano (primer día): al crear, el mes que estás viendo
+  const [since, setSince] = useState(income ? addMonths(month, 1) : month);
   const [saving, setSaving] = useState(false);
 
   async function save() {
     if (!name.trim() || !parseAmount(amount)) {
       toast.error("Nombre e importe son obligatorios");
+      return;
+    }
+    if (
+      (!income || effective === "custom") &&
+      !/^\d{4}-\d{2}-01$/.test(since)
+    ) {
+      toast.error("Elige desde qué mes cuenta");
       return;
     }
     setSaving(true);
@@ -139,21 +148,31 @@ function IncomeDialog({
     if (!income) {
       ({ error } = await supabase
         .from("recurring_incomes")
-        .insert({ ...payload, starts_on: month }));
+        .insert({ ...payload, starts_on: since }));
     } else if (effective === "now") {
       ({ error } = await supabase
         .from("recurring_incomes")
         .update(payload)
         .eq("id", income.id));
     } else {
-      ({ error } = await supabase
-        .from("recurring_incomes")
-        .update({ ends_on: monthEnd(month) })
-        .eq("id", income.id));
-      if (!error) {
+      const startsOn = effective === "next" ? addMonths(month, 1) : since;
+      if (startsOn <= income.starts_on) {
+        // El cambio empieza antes (o a la vez) que el ingreso: no hay meses
+        // viejos que preservar, se corrige la misma fila moviendo su inicio
         ({ error } = await supabase
           .from("recurring_incomes")
-          .insert({ ...payload, starts_on: addMonths(month, 1) }));
+          .update({ ...payload, starts_on: startsOn })
+          .eq("id", income.id));
+      } else {
+        ({ error } = await supabase
+          .from("recurring_incomes")
+          .update({ ends_on: monthEnd(addMonths(startsOn, -1)) })
+          .eq("id", income.id));
+        if (!error) {
+          ({ error } = await supabase
+            .from("recurring_incomes")
+            .insert({ ...payload, starts_on: startsOn }));
+        }
       }
     }
 
@@ -242,7 +261,18 @@ function IncomeDialog({
               </SelectContent>
             </Select>
           </div>
-          {income && (
+          {!income ? (
+            <div className="flex flex-col gap-2">
+              <Label>Cuenta desde</Label>
+              <Input
+                type="month"
+                value={since.slice(0, 7)}
+                onChange={(e) =>
+                  setSince(e.target.value ? `${e.target.value}-01` : "")
+                }
+              />
+            </div>
+          ) : (
             <div className="flex flex-col gap-2">
               <Label>¿Desde cuándo aplica?</Label>
               <Select
@@ -250,8 +280,11 @@ function IncomeDialog({
                 items={{
                   next: "Desde el mes que viene",
                   now: "Corregir este mes",
+                  custom: "Desde otro mes…",
                 }}
-                onValueChange={(v) => setEffective(v as "now" | "next")}
+                onValueChange={(v) =>
+                  setEffective(v as "now" | "next" | "custom")
+                }
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -259,8 +292,18 @@ function IncomeDialog({
                 <SelectContent>
                   <SelectItem value="next">Desde el mes que viene</SelectItem>
                   <SelectItem value="now">Corregir este mes</SelectItem>
+                  <SelectItem value="custom">Desde otro mes…</SelectItem>
                 </SelectContent>
               </Select>
+              {effective === "custom" && (
+                <Input
+                  type="month"
+                  value={since.slice(0, 7)}
+                  onChange={(e) =>
+                    setSince(e.target.value ? `${e.target.value}-01` : "")
+                  }
+                />
+              )}
             </div>
           )}
           <Button onClick={save} disabled={saving}>
