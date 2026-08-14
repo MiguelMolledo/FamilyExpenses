@@ -51,6 +51,7 @@ export default async function DashboardPage({
     categoryBudgets,
     overview,
     savingsQ,
+    planQ,
     categoriesQ,
     subcategoriesQ,
     petsQ,
@@ -60,6 +61,7 @@ export default async function DashboardPage({
     getCategoryBudgets(supabase, month),
     getYearOverview(supabase, year),
     supabase.from("savings_movements").select("date, amount").order("date"),
+    supabase.from("savings_plans").select("*").maybeSingle(),
     supabase.from("categories").select("*").order("name"),
     supabase.from("subcategories").select("*").order("name"),
     supabase.from("pets").select("*").order("created_at"),
@@ -77,6 +79,21 @@ export default async function DashboardPage({
     .reduce((s, m) => s + m.amount, 0);
   const savedThisYear = savingsBalance - startBalance;
 
+  // El objetivo solo cuenta desde el mes de arranque del plan: quien empieza
+  // a mitad de año no debe salir «por detrás» de los meses en que no ahorraba
+  const planTarget = Number(planQ.data?.monthly_target ?? 0);
+  const planStart = planQ.data?.starts_on as string | null | undefined;
+  const startYear = planStart ? Number(planStart.slice(0, 4)) : year;
+  const startIdx = !planStart
+    ? 0
+    : startYear < year
+      ? 0
+      : startYear > year
+        ? 12
+        : Number(planStart.slice(5, 7)) - 1;
+  /** meses con objetivo desde el arranque hasta el mes i incluido */
+  const targetMonths = (i: number) => Math.max(0, i + 1 - startIdx);
+
   const realByMonth: (number | null)[] = [];
   const expectedByMonth: number[] = [];
   for (let i = 0; i < 12; i++) {
@@ -89,9 +106,9 @@ export default async function DashboardPage({
             .reduce((s, m) => s + m.amount, 0)
         : null
     );
-    expectedByMonth.push(startBalance + budget.savingsTarget * (i + 1));
+    expectedByMonth.push(startBalance + planTarget * targetMonths(i));
   }
-  const expectedSavedYtd = budget.savingsTarget * (monthIdx + 1);
+  const expectedSavedYtd = planTarget * targetMonths(monthIdx);
   const savingsAhead = savedThisYear - expectedSavedYtd;
 
   // Desglose del mes por categoría (solo gastos, sin traspasos)

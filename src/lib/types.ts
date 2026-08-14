@@ -97,6 +97,8 @@ export type SavingsMovement = {
 export type SavingsPlan = {
   family_id: string;
   monthly_target: number;
+  /** primer mes en que el objetivo cuenta; null = desde siempre */
+  starts_on: string | null;
 };
 
 export type PersonalAllowance = {

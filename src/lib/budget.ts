@@ -37,6 +37,19 @@ export function monthEnd(month: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Objetivo de ahorro que aplica en un mes: 0 antes del mes de arranque del
+ * plan (starts_on null = desde siempre).
+ */
+export function savingsTargetFor(
+  plan: { monthly_target: number; starts_on: string | null } | null,
+  month: string
+): number {
+  if (!plan) return 0;
+  if (plan.starts_on && month < `${plan.starts_on.slice(0, 7)}-01`) return 0;
+  return Number(plan.monthly_target ?? 0);
+}
+
 /** ¿Está la fila (starts_on/ends_on) activa en el mes dado? */
 export function activeInMonth(
   row: { starts_on: string; ends_on: string | null },
@@ -127,7 +140,7 @@ export async function getMonthBudget(
     ...t,
     amount: Number(t.amount),
   })) as Transaction[];
-  const savingsTarget = Number(planQ.data?.monthly_target ?? 0);
+  const savingsTarget = savingsTargetFor(planQ.data, month);
   const carryover = Number(prevClosureQ.data?.carryover ?? 0);
   const categories = (categoriesQ.data ?? []) as Category[];
   const subcategories = (subsQ.data ?? []) as Subcategory[];
@@ -344,17 +357,14 @@ export async function getYearOverview(
   ]);
 
   const recIncomes = (incomesQ.data ?? []) as RecurringIncome[];
-  const savingsTarget = Number(planQ.data?.monthly_target ?? 0);
   const categories = (catsQ.data ?? []) as Category[];
   const subcategories = (subsQ.data ?? []) as Subcategory[];
   const excludedCats = new Set(
     categories.filter((c) => c.exclude_from_stats).map((c) => c.id)
   );
-  const budgeted =
-    categories
-      .filter((c) => !c.exclude_from_stats)
-      .reduce((s, c) => s + (effectiveBudget(c, subcategories) ?? 0), 0) +
-    savingsTarget;
+  const budgetedBase = categories
+    .filter((c) => !c.exclude_from_stats)
+    .reduce((s, c) => s + (effectiveBudget(c, subcategories) ?? 0), 0);
 
   const months: YearMonthRow[] = [];
   for (let m = 1; m <= 12; m++) {
@@ -365,7 +375,7 @@ export async function getYearOverview(
     months.push({
       month,
       expectedIncome,
-      budgeted,
+      budgeted: budgetedBase + savingsTargetFor(planQ.data, month),
       realIncome: expectedIncome, // extraordinarios se suman abajo
       realExpenses: 0,
     });
