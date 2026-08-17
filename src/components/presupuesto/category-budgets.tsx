@@ -124,13 +124,19 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
     router.refresh();
   }
 
-  async function savePrescindible(subId: string, value: boolean) {
+  async function savePrescindible(subId: string, pct: number) {
     const { error } = await createClient()
       .from("subcategories")
-      .update({ prescindible: value })
+      .update({ prescindible_pct: pct })
       .eq("id", subId);
     if (error) return void toast.error("No se pudo guardar");
-    toast.success(value ? "Marcada como prescindible" : "Vuelve a ser imprescindible");
+    toast.success(
+      pct <= 0
+        ? "Vuelve a ser imprescindible"
+        : pct >= 100
+          ? "Marcada como prescindible"
+          : `Prescindible al ${pct} %`
+    );
     router.refresh();
   }
 
@@ -351,7 +357,8 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
                             type="button"
                             className={cn(
                               "shrink-0 rounded-md border p-1 hover:bg-muted",
-                              r.category.is_flexible || sub.prescindible
+                              r.category.is_flexible ||
+                                Number(sub.prescindible_pct) > 0
                                 ? "border-amber-400 text-amber-600"
                                 : "text-muted-foreground/50"
                             )}
@@ -359,17 +366,41 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
                             title={
                               r.category.is_flexible
                                 ? "Toda la categoría ya está marcada como prescindible"
-                                : sub.prescindible
+                                : Number(sub.prescindible_pct) > 0
                                   ? "Prescindible: se podría cortar en un bache. Toca para volverla imprescindible"
-                                  : "Imprescindible. Toca para marcarla como prescindible"
+                                  : "Imprescindible. Toca para marcarla como prescindible (y ajusta el % si solo se podría cortar una parte)"
                             }
-                            aria-label={`${sub.name}: ${sub.prescindible ? "prescindible" : "imprescindible"}`}
+                            aria-label={`${sub.name}: ${Number(sub.prescindible_pct) > 0 ? `prescindible al ${Number(sub.prescindible_pct)} %` : "imprescindible"}`}
                             onClick={() =>
-                              savePrescindible(sub.id, !sub.prescindible)
+                              savePrescindible(
+                                sub.id,
+                                Number(sub.prescindible_pct) > 0 ? 0 : 100
+                              )
                             }
                           >
                             <Scissors className="size-3" />
                           </button>
+                          {!r.category.is_flexible &&
+                            Number(sub.prescindible_pct) > 0 && (
+                              <label className="flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground">
+                                <input
+                                  className="h-7 w-10 rounded-md border bg-transparent pr-1 text-right text-xs"
+                                  inputMode="numeric"
+                                  title="Qué parte se podría cortar: 100 = entera, 50 = la mitad"
+                                  aria-label={`% prescindible de ${sub.name}`}
+                                  defaultValue={Number(sub.prescindible_pct)}
+                                  key={`pct-${sub.id}-${sub.prescindible_pct}`}
+                                  onBlur={(e) => {
+                                    const n = parseAmount(e.target.value);
+                                    if (!Number.isFinite(n)) return;
+                                    const pct = Math.min(100, Math.max(0, n));
+                                    if (pct !== Number(sub.prescindible_pct))
+                                      savePrescindible(sub.id, pct);
+                                  }}
+                                />
+                                %
+                              </label>
+                            )}
                           <UnitToggle id={sub.id} />
                           <AmountInput
                             placeholder="—"

@@ -38,9 +38,17 @@ export function ReactionCapacity({ rows }: { rows: CategoryBudgetRow[] }) {
             subs={r.subRows
               .filter(
                 ({ sub, spent }) =>
-                  spent > 0 && (r.category.is_flexible || sub.prescindible)
+                  spent > 0 &&
+                  (r.category.is_flexible || Number(sub.prescindible_pct) > 0)
               )
-              .map(({ sub, spent }) => ({ name: sub.name, amount: spent }))
+              .map(({ sub, spent }) => {
+                const pct = Number(sub.prescindible_pct);
+                const partial = !r.category.is_flexible && pct < 100;
+                return {
+                  name: partial ? `${sub.name} (${pct} %)` : sub.name,
+                  amount: r.category.is_flexible ? spent : (spent * pct) / 100,
+                };
+              })
               .sort((a, b) => b.amount - a.amount)}
             className="cursor-pointer"
           >

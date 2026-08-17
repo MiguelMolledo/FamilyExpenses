@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { TriangleAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { getCategoryBudgets, getMonthBudget, addMonths } from "@/lib/budget";
+import {
+  getCategoryBudgets,
+  getMonthBudget,
+  addMonths,
+  activeInMonth,
+} from "@/lib/budget";
 import { BudgetSummary } from "@/components/presupuesto/budget-summary";
 import { CategoryBudgets } from "@/components/presupuesto/category-budgets";
 import { SurvivalMode } from "@/components/presupuesto/survival-mode";
@@ -19,16 +24,29 @@ export default async function PresupuestoPage({
   const month = /^\d{4}-\d{2}-01$/.test(mes ?? "") ? mes! : currentMonthStart();
 
   const supabase = await createClient();
-  const [budget, categoryBudgets, profilesQ, savingsQ] = await Promise.all([
-    getMonthBudget(supabase, month),
-    getCategoryBudgets(supabase, month),
-    supabase.from("profiles").select("*"),
-    supabase.from("savings_movements").select("amount"),
-  ]);
+  const [budget, categoryBudgets, profilesQ, savingsQ, allowancesQ] =
+    await Promise.all([
+      getMonthBudget(supabase, month),
+      getCategoryBudgets(supabase, month),
+      supabase.from("profiles").select("*"),
+      supabase.from("savings_movements").select("amount"),
+      supabase.from("personal_allowances").select("*"),
+    ]);
   const savingsBalance = (savingsQ.data ?? []).reduce(
     (s, m) => s + Number(m.amount),
     0
   );
+  // Pagas personales vigentes este mes (los sobres): en modo supervivencia
+  // se pausarían, así que la tarjeta las cuenta como prescindibles
+  const nameByProfile = new Map(
+    (profilesQ.data ?? []).map((p) => [p.user_id, p.display_name])
+  );
+  const allowances = (allowancesQ.data ?? [])
+    .filter((a) => activeInMonth(a, month))
+    .map((a) => ({
+      name: `Paga de ${nameByProfile.get(a.profile_id) ?? "?"}`,
+      amount: Number(a.amount),
+    }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -56,6 +74,8 @@ export default async function PresupuestoPage({
       <SurvivalMode
         rows={categoryBudgets.rows}
         savingsBalance={savingsBalance}
+        savingsTarget={budget.savingsTarget}
+        allowances={allowances}
       />
 
       <RecurringIncomes

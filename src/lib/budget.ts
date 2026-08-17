@@ -308,21 +308,27 @@ export async function getCategoryBudgets(
         .reduce((s, t) => s + t.amount, 0),
     }));
 
-    // Prescindible: con is_flexible cae la categoría entera; si no, solo lo
-    // asignado en el desglose marcado. Lo sin asignar es imprescindible.
+    // Prescindible: con is_flexible cae la categoría entera; si no, cada
+    // subcategoría aporta su importe × pct/100 (el recorte puede ser parcial).
+    // Lo sin asignar en el desglose es imprescindible.
     const prescindibleBudget = c.is_flexible
       ? (budget ?? 0)
       : Math.min(
           budget ?? 0,
           subs
-            .filter((s) => s.prescindible && s.monthly_budget != null)
-            .reduce((s, x) => s + Number(x.monthly_budget), 0)
+            .filter((s) => s.monthly_budget != null)
+            .reduce(
+              (s, x) =>
+                s + (Number(x.monthly_budget) * Number(x.prescindible_pct)) / 100,
+              0
+            )
         );
     const flexibleSpent = c.is_flexible
       ? spent
-      : subRows
-          .filter(({ sub }) => sub.prescindible)
-          .reduce((s, x) => s + x.spent, 0);
+      : subRows.reduce(
+          (s, x) => s + (x.spent * Number(x.sub.prescindible_pct)) / 100,
+          0
+        );
 
     return {
       category: c,

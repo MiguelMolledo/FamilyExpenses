@@ -23,44 +23,97 @@ function fmtRunway(months: number): string {
   return `${fmt(months)} ${months < 1.05 ? "mes" : "meses"}`;
 }
 
+const Row = ({
+  label,
+  amount,
+  sign,
+  strong,
+  color,
+}: {
+  label: string;
+  amount: number;
+  sign?: "+" | "−";
+  strong?: boolean;
+  color?: string;
+}) => (
+  <div
+    className={
+      strong
+        ? "flex items-baseline justify-between gap-2 border-t pt-1 font-semibold"
+        : "flex items-baseline justify-between gap-2"
+    }
+  >
+    <span>{label}</span>
+    <span className={`whitespace-nowrap tabular-nums ${color ?? ""}`}>
+      {sign && `${sign} `}
+      {eur(amount)}
+    </span>
+  </div>
+);
+
 /**
  * Modo supervivencia: si mañana os quedáis sin ingresos, ¿cuál es el coste de
- * vida mínimo? Mínimo = presupuesto de categorías − lo marcado prescindible
- * (categorías is_flexible enteras o subcategorías con tijeras). Cruzado con la
- * hucha da el colchón: cuántos meses aguantaríais en mínimo sin ingresar nada.
+ * vida mínimo? Lo que sale cada mes = presupuesto de categorías + ahorro +
+ * pagas personales (sobres). En un bache se corta lo marcado prescindible
+ * (categorías is_flexible enteras o subcategorías con tijeras) y se pausan
+ * ahorro y pagas, que son prescindibles por definición. Cruzado con la hucha
+ * da el colchón: cuántos meses aguantaríais en mínimo sin ingresar nada.
  */
 export function SurvivalMode({
   rows,
   savingsBalance,
+  savingsTarget,
+  allowances,
 }: {
   rows: CategoryBudgetRow[];
   savingsBalance: number;
+  savingsTarget: number;
+  allowances: { name: string; amount: number }[];
 }) {
   const [open, setOpen] = useState(false);
 
   const totalBudget = rows.reduce((s, r) => s + (r.budget ?? 0), 0);
   if (totalBudget <= 0) return null;
   const prescindible = rows.reduce((s, r) => s + r.prescindibleBudget, 0);
+  const allowancesTotal = allowances.reduce((s, a) => s + a.amount, 0);
+  /** todo lo que se cortaría o pausaría en un bache */
+  const cut = prescindible + savingsTarget + allowancesTotal;
+  /** lo que sale cada mes si se cumple el plan completo */
+  const planTotal = totalBudget + savingsTarget + allowancesTotal;
   const minimo = totalBudget - prescindible;
   const runway = minimo > 0 ? savingsBalance / minimo : null;
 
-  const items = rows
-    .flatMap((r) =>
+  const items = [
+    ...(savingsTarget > 0
+      ? [{ key: "ahorro", name: "Ahorro previsto (se pausa)", amount: savingsTarget }]
+      : []),
+    ...allowances.map((a) => ({
+      key: `paga-${a.name}`,
+      name: `${a.name} (se pausa)`,
+      amount: a.amount,
+    })),
+    ...rows.flatMap((r) =>
       r.category.is_flexible
         ? r.budget
           ? [{ key: r.category.id, name: r.category.name, amount: r.budget }]
           : []
         : r.subRows
             .filter(
-              ({ sub }) => sub.prescindible && sub.monthly_budget != null
+              ({ sub }) =>
+                Number(sub.prescindible_pct) > 0 && sub.monthly_budget != null
             )
-            .map(({ sub }) => ({
-              key: sub.id,
-              name: `${r.category.name} · ${sub.name}`,
-              amount: Number(sub.monthly_budget),
-            }))
-    )
-    .sort((a, b) => b.amount - a.amount);
+            .map(({ sub }) => {
+              const pct = Number(sub.prescindible_pct);
+              return {
+                key: sub.id,
+                name:
+                  `${r.category.name} · ${sub.name}` +
+                  (pct < 100 ? ` (${pct} %)` : ""),
+                amount: (Number(sub.monthly_budget) * pct) / 100,
+              };
+            })
+    ),
+  ].sort((a, b) => b.amount - a.amount);
 
   // Marcadas prescindibles pero sin importe en el desglose: no restan nada
   const unbudgeted = rows
@@ -68,7 +121,7 @@ export function SurvivalMode({
     .flatMap((r) =>
       r.subRows.filter(
         ({ sub }) =>
-          sub.prescindible &&
+          Number(sub.prescindible_pct) > 0 &&
           sub.kind === "expense" &&
           sub.monthly_budget == null
       )
@@ -83,7 +136,7 @@ export function SurvivalMode({
         </CardTitle>
         <CardDescription>
           Si hubiera que apretar (paro, un bache), esto es lo que necesitáis de
-          verdad para vivir; el resto se puede cortar.
+          verdad para vivir; el resto se corta o se pausa.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -95,9 +148,7 @@ export function SurvivalMode({
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Prescindible</p>
-              <p className="font-semibold text-amber-600">
-                {eur(prescindible)}/mes
-              </p>
+              <p className="font-semibold text-amber-600">{eur(cut)}/mes</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">La hucha da para</p>
@@ -118,37 +169,59 @@ export function SurvivalMode({
         {open && (
           <div className="mx-auto mt-3 flex max-w-sm flex-col gap-3 border-t pt-3 text-sm">
             <div className="flex flex-col gap-1">
-              <div className="flex items-baseline justify-between gap-2">
-                <span>Presupuesto de las categorías</span>
-                <span className="whitespace-nowrap tabular-nums">
-                  {eur(totalBudget)}
-                </span>
-              </div>
-              <div className="flex items-baseline justify-between gap-2 text-amber-600">
-                <span>Prescindible (se podría cortar)</span>
-                <span className="whitespace-nowrap tabular-nums">
-                  − {eur(prescindible)}
-                </span>
-              </div>
-              <div className="flex items-baseline justify-between gap-2 border-t pt-1 font-semibold">
-                <span>Mínimo para vivir</span>
-                <span className="whitespace-nowrap tabular-nums">
-                  {eur(minimo)}/mes
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                El ahorro previsto no cuenta: en modo supervivencia se pausa.
+              <p className="text-xs font-medium uppercase text-muted-foreground">
+                Lo que sale en un mes normal
               </p>
+              <Row label="Presupuesto de las categorías" amount={totalBudget} />
+              {savingsTarget > 0 && (
+                <Row label="Ahorro previsto" amount={savingsTarget} />
+              )}
+              {allowancesTotal > 0 && (
+                <Row
+                  label="Pagas personales (sobres)"
+                  amount={allowancesTotal}
+                />
+              )}
+              <Row label="Total del plan" amount={planTotal} strong />
+            </div>
+            <div className="flex flex-col gap-1">
+              <p className="text-xs font-medium uppercase text-muted-foreground">
+                En modo supervivencia
+              </p>
+              <Row
+                label="Prescindible de las categorías"
+                amount={prescindible}
+                sign="−"
+                color="text-amber-600"
+              />
+              {savingsTarget > 0 && (
+                <Row
+                  label="El ahorro se pausa"
+                  amount={savingsTarget}
+                  sign="−"
+                  color="text-amber-600"
+                />
+              )}
+              {allowancesTotal > 0 && (
+                <Row
+                  label="Las pagas se pausan"
+                  amount={allowancesTotal}
+                  sign="−"
+                  color="text-amber-600"
+                />
+              )}
+              <Row label="Mínimo para vivir" amount={minimo} strong />
             </div>
             {runway != null && (
               <p>
-                Con los <span className="font-medium">{eur(savingsBalance)}</span>{" "}
-                de la hucha aguantaríais{" "}
+                Con los{" "}
+                <span className="font-medium">{eur(savingsBalance)}</span> de la
+                hucha aguantaríais{" "}
                 <span className="font-medium">{fmtRunway(runway)}</span> en modo
                 mínimo sin ingresar nada.
               </p>
             )}
-            {items.length > 0 ? (
+            {items.length > 0 && (
               <div className="flex flex-col gap-1">
                 <p className="text-xs font-medium uppercase text-muted-foreground">
                   Lo que se cortaría
@@ -167,11 +240,12 @@ export function SurvivalMode({
                   </div>
                 ))}
               </div>
-            ) : (
+            )}
+            {prescindible === 0 && (
               <p className="text-xs text-muted-foreground">
-                Aún no hay nada marcado: usa las tijeras{" "}
+                Aún no hay nada marcado en las categorías: usa las tijeras{" "}
                 <Scissors className="inline size-3" /> en el desglose de cada
-                categoría para marcar lo que podríais cortar en un bache.
+                una para marcar lo que podríais cortar en un bache.
               </p>
             )}
             {unbudgeted > 0 && (
