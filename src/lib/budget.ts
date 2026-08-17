@@ -229,12 +229,17 @@ export type CategoryBudgetRow = {
   available: number | null;
   /** saldo acumulado del año (solo rollover 'accumulate') */
   accumulated: number | null;
+  /** parte prescindible del presupuesto: la categoría entera (is_flexible) o
+   * la suma del desglose marcado prescindible */
+  prescindibleBudget: number;
+  /** gasto del mes en lo prescindible (capacidad de reacción) */
+  flexibleSpent: number;
   subRows: { sub: Subcategory; spent: number }[];
 };
 
 export type CategoryBudgets = {
   rows: CategoryBudgetRow[];
-  /** capacidad de reacción: gasto del mes en categorías recortables */
+  /** capacidad de reacción: gasto del mes en lo marcado prescindible */
   flexibleSpent: number;
   totalSpent: number;
 };
@@ -296,6 +301,29 @@ export async function getCategoryBudgets(
       }
     }
 
+    const subRows = subs.map((sub) => ({
+      sub,
+      spent: inCat
+        .filter((t) => t.date >= month && t.subcategory_id === sub.id)
+        .reduce((s, t) => s + t.amount, 0),
+    }));
+
+    // Prescindible: con is_flexible cae la categoría entera; si no, solo lo
+    // asignado en el desglose marcado. Lo sin asignar es imprescindible.
+    const prescindibleBudget = c.is_flexible
+      ? (budget ?? 0)
+      : Math.min(
+          budget ?? 0,
+          subs
+            .filter((s) => s.prescindible && s.monthly_budget != null)
+            .reduce((s, x) => s + Number(x.monthly_budget), 0)
+        );
+    const flexibleSpent = c.is_flexible
+      ? spent
+      : subRows
+          .filter(({ sub }) => sub.prescindible)
+          .reduce((s, x) => s + x.spent, 0);
+
     return {
       category: c,
       budget,
@@ -303,19 +331,14 @@ export async function getCategoryBudgets(
       fixedSpent,
       available,
       accumulated,
-      subRows: subs.map((sub) => ({
-        sub,
-        spent: inCat
-          .filter((t) => t.date >= month && t.subcategory_id === sub.id)
-          .reduce((s, t) => s + t.amount, 0),
-      })),
+      prescindibleBudget,
+      flexibleSpent,
+      subRows,
     };
   });
 
   const totalSpent = rows.reduce((s, r) => s + r.spent, 0);
-  const flexibleSpent = rows
-    .filter((r) => r.category.is_flexible)
-    .reduce((s, r) => s + r.spent, 0);
+  const flexibleSpent = rows.reduce((s, r) => s + r.flexibleSpent, 0);
 
   return { rows, flexibleSpent, totalSpent };
 }

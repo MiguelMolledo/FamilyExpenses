@@ -3,15 +3,15 @@ import type { CategoryBudgetRow } from "@/lib/budget";
 import { CategoryBreakdown } from "@/components/dashboard/category-breakdown";
 
 /**
- * Capacidad de reacción: cuánto del gasto del mes está en categorías
- * recortables (Ocio, Ropa, Gastos Personales…). Es el margen de maniobra si
- * un mes hay que apretar el cinturón.
+ * Capacidad de reacción: cuánto del gasto del mes está en lo marcado como
+ * prescindible (categorías recortables enteras o subcategorías con tijeras).
+ * Es el margen de maniobra si un mes hay que apretar el cinturón.
  */
 export function ReactionCapacity({ rows }: { rows: CategoryBudgetRow[] }) {
   const flexible = rows
-    .filter((r) => r.category.is_flexible && r.spent > 0)
-    .sort((a, b) => b.spent - a.spent);
-  const flexibleSpent = flexible.reduce((s, r) => s + r.spent, 0);
+    .filter((r) => r.flexibleSpent > 0)
+    .sort((a, b) => b.flexibleSpent - a.flexibleSpent);
+  const flexibleSpent = flexible.reduce((s, r) => s + r.flexibleSpent, 0);
   const totalSpent = rows.reduce((s, r) => s + r.spent, 0);
   if (totalSpent <= 0) return null;
   const pct = Math.round((flexibleSpent / totalSpent) * 100);
@@ -20,7 +20,7 @@ export function ReactionCapacity({ rows }: { rows: CategoryBudgetRow[] }) {
     <div className="flex flex-col gap-2">
       <p className="text-sm">
         Este mes, <span className="font-semibold">{eur(flexibleSpent)}</span> del
-        gasto ({pct}%) está en categorías recortables: si hiciera falta frenar,
+        gasto ({pct}%) está en cosas prescindibles: si hiciera falta frenar,
         ese es vuestro margen de maniobra.
       </p>
       <div className="h-1.5 overflow-hidden rounded-full bg-muted">
@@ -34,9 +34,12 @@ export function ReactionCapacity({ rows }: { rows: CategoryBudgetRow[] }) {
           <CategoryBreakdown
             key={r.category.id}
             title={r.category.name}
-            total={r.spent}
+            total={r.flexibleSpent}
             subs={r.subRows
-              .filter(({ spent }) => spent > 0)
+              .filter(
+                ({ sub, spent }) =>
+                  spent > 0 && (r.category.is_flexible || sub.prescindible)
+              )
               .map(({ sub, spent }) => ({ name: sub.name, amount: spent }))
               .sort((a, b) => b.amount - a.amount)}
             className="cursor-pointer"
@@ -45,9 +48,9 @@ export function ReactionCapacity({ rows }: { rows: CategoryBudgetRow[] }) {
               <span className="flex-1 truncate text-muted-foreground">
                 {r.category.name}
               </span>
-              <span className="font-medium">{eur(r.spent)}</span>
+              <span className="font-medium">{eur(r.flexibleSpent)}</span>
               <span className="w-10 shrink-0 text-right text-xs text-muted-foreground">
-                {Math.round((r.spent / totalSpent) * 100)}%
+                {Math.round((r.flexibleSpent / totalSpent) * 100)}%
               </span>
             </div>
           </CategoryBreakdown>

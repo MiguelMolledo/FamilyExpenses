@@ -6,7 +6,7 @@ Referencia rápida de los sistemas de FamilyExpenses. Optimizado para búsqueda 
 
 ## [Presupuesto y sobres](./presupuesto.md)
 
-Modelo de sobres puro, disponible del mes, presupuesto por categoría, subcategorías, gasto fijo (is_fixed), rollover acumula/a-ahorro, cierre de mes, arrastre (carryover), capacidad de reacción, ingresos recurrentes, comparar meses, movimientos automáticos (derrama), popup de desglose por subcategoría.
+Modelo de sobres puro, disponible del mes, presupuesto por categoría, subcategorías, gasto fijo (is_fixed), rollover acumula/a-ahorro, cierre de mes, arrastre (carryover), capacidad de reacción, prescindible/imprescindible (tijeras), modo supervivencia, mínimo para vivir, colchón de la hucha, ingresos recurrentes, comparar meses, movimientos automáticos (derrama), popup de desglose por subcategoría.
 
 **Source**: `src/lib/budget.ts`, `src/app/(app)/presupuesto/`, `src/app/(app)/page.tsx`, `src/app/(app)/comparar/`
 

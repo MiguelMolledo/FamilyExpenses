@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCategoryBudgets, getMonthBudget, addMonths } from "@/lib/budget";
 import { BudgetSummary } from "@/components/presupuesto/budget-summary";
 import { CategoryBudgets } from "@/components/presupuesto/category-budgets";
+import { SurvivalMode } from "@/components/presupuesto/survival-mode";
 import { currentMonthStart } from "@/lib/types";
 import { RecurringIncomes } from "@/components/presupuesto/recurring-incomes";
 import { CloseMonth } from "@/components/presupuesto/close-month";
@@ -18,11 +19,16 @@ export default async function PresupuestoPage({
   const month = /^\d{4}-\d{2}-01$/.test(mes ?? "") ? mes! : currentMonthStart();
 
   const supabase = await createClient();
-  const [budget, categoryBudgets, profilesQ] = await Promise.all([
+  const [budget, categoryBudgets, profilesQ, savingsQ] = await Promise.all([
     getMonthBudget(supabase, month),
     getCategoryBudgets(supabase, month),
     supabase.from("profiles").select("*"),
+    supabase.from("savings_movements").select("amount"),
   ]);
+  const savingsBalance = (savingsQ.data ?? []).reduce(
+    (s, m) => s + Number(m.amount),
+    0
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -46,6 +52,11 @@ export default async function PresupuestoPage({
       <BudgetSummary budget={budget} />
 
       <CategoryBudgets rows={categoryBudgets.rows} />
+
+      <SurvivalMode
+        rows={categoryBudgets.rows}
+        savingsBalance={savingsBalance}
+      />
 
       <RecurringIncomes
         incomes={budget.recurringIncomes}

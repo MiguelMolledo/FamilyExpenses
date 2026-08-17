@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Scissors } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { eur, parseAmount } from "@/lib/types";
 import { AmountInput } from "@/components/amount-input";
@@ -107,6 +107,30 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
         ? `El desglose suma ${eur(value!)}: el presupuesto se ajusta a esa cantidad`
         : "Presupuesto guardado"
     );
+    router.refresh();
+  }
+
+  async function saveFlexible(categoryId: string, value: boolean) {
+    const { error } = await createClient()
+      .from("categories")
+      .update({ is_flexible: value })
+      .eq("id", categoryId);
+    if (error) return void toast.error("No se pudo guardar");
+    toast.success(
+      value
+        ? "Categoría marcada como prescindible"
+        : "Categoría marcada como imprescindible"
+    );
+    router.refresh();
+  }
+
+  async function savePrescindible(subId: string, value: boolean) {
+    const { error } = await createClient()
+      .from("subcategories")
+      .update({ prescindible: value })
+      .eq("id", subId);
+    if (error) return void toast.error("No se pudo guardar");
+    toast.success(value ? "Marcada como prescindible" : "Vuelve a ser imprescindible");
     router.refresh();
   }
 
@@ -274,23 +298,43 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
               )}
               {expanded[r.category.id] && (
                 <div className="flex flex-col gap-1 pl-5 pt-1">
-                  <Select
-                    value={r.category.rollover}
-                    items={ROLLOVER_LABELS}
-                    onValueChange={(v) => v && saveRollover(r.category.id, v)}
-                  >
-                    <SelectTrigger className="h-7 w-fit text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="accumulate">
-                        Sobrante: acumula para otros meses
-                      </SelectItem>
-                      <SelectItem value="to_savings">
-                        Sobrante: a ahorro al cerrar el mes
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Select
+                      value={r.category.rollover}
+                      items={ROLLOVER_LABELS}
+                      onValueChange={(v) => v && saveRollover(r.category.id, v)}
+                    >
+                      <SelectTrigger className="h-7 w-fit text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="accumulate">
+                          Sobrante: acumula para otros meses
+                        </SelectItem>
+                        <SelectItem value="to_savings">
+                          Sobrante: a ahorro al cerrar el mes
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex h-7 items-center gap-1 rounded-md border px-2 text-xs hover:bg-muted",
+                        r.category.is_flexible
+                          ? "border-amber-400 text-amber-600"
+                          : "text-muted-foreground"
+                      )}
+                      title="Lo prescindible se podría cortar en un bache: no cuenta en el mínimo para vivir"
+                      onClick={() =>
+                        saveFlexible(r.category.id, !r.category.is_flexible)
+                      }
+                    >
+                      <Scissors className="size-3" />
+                      {r.category.is_flexible
+                        ? "Toda la categoría es prescindible"
+                        : "Categoría imprescindible"}
+                    </button>
+                  </div>
                   {r.subRows.map(({ sub, spent }) => (
                     <div
                       key={sub.id}
@@ -303,6 +347,29 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
                       <span className="text-muted-foreground">{eur(spent)}</span>
                       {sub.kind === "expense" && (
                         <>
+                          <button
+                            type="button"
+                            className={cn(
+                              "shrink-0 rounded-md border p-1 hover:bg-muted",
+                              r.category.is_flexible || sub.prescindible
+                                ? "border-amber-400 text-amber-600"
+                                : "text-muted-foreground/50"
+                            )}
+                            disabled={r.category.is_flexible}
+                            title={
+                              r.category.is_flexible
+                                ? "Toda la categoría ya está marcada como prescindible"
+                                : sub.prescindible
+                                  ? "Prescindible: se podría cortar en un bache. Toca para volverla imprescindible"
+                                  : "Imprescindible. Toca para marcarla como prescindible"
+                            }
+                            aria-label={`${sub.name}: ${sub.prescindible ? "prescindible" : "imprescindible"}`}
+                            onClick={() =>
+                              savePrescindible(sub.id, !sub.prescindible)
+                            }
+                          >
+                            <Scissors className="size-3" />
+                          </button>
                           <UnitToggle id={sub.id} />
                           <AmountInput
                             placeholder="—"

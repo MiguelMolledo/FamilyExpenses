@@ -34,6 +34,8 @@ export type Subcategory = {
   name: string;
   kind: "expense" | "income";
   monthly_budget: number | null;
+  /** se podría cortar en un bache; su presupuesto no cuenta en el mínimo para vivir */
+  prescindible: boolean;
 };
 
 export type Pet = {
