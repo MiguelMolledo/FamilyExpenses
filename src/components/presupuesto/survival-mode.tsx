@@ -53,33 +53,31 @@ const Row = ({
 
 /**
  * Modo supervivencia: si mañana os quedáis sin ingresos, ¿cuál es el coste de
- * vida mínimo? Lo que sale cada mes = presupuesto de categorías + ahorro +
- * pagas personales (sobres). En un bache se corta lo marcado prescindible
- * (categorías is_flexible enteras o subcategorías con tijeras) y se pausan
- * ahorro y pagas, que son prescindibles por definición. Cruzado con la hucha
- * da el colchón: cuántos meses aguantaríais en mínimo sin ingresar nada.
+ * vida mínimo? Lo que sale cada mes = presupuesto de categorías + ahorro.
+ * En un bache se corta lo marcado prescindible (categorías is_flexible
+ * enteras o subcategorías con tijeras, con % parcial) y se pausa el ahorro,
+ * prescindible por definición. Los sobres personales van como una categoría
+ * prescindible más. Cruzado con la hucha da el colchón: cuántos meses
+ * aguantaríais en mínimo sin ingresar nada.
  */
 export function SurvivalMode({
   rows,
   savingsBalance,
   savingsTarget,
-  allowances,
 }: {
   rows: CategoryBudgetRow[];
   savingsBalance: number;
   savingsTarget: number;
-  allowances: { name: string; amount: number }[];
 }) {
   const [open, setOpen] = useState(false);
 
   const totalBudget = rows.reduce((s, r) => s + (r.budget ?? 0), 0);
   if (totalBudget <= 0) return null;
   const prescindible = rows.reduce((s, r) => s + r.prescindibleBudget, 0);
-  const allowancesTotal = allowances.reduce((s, a) => s + a.amount, 0);
   /** todo lo que se cortaría o pausaría en un bache */
-  const cut = prescindible + savingsTarget + allowancesTotal;
+  const cut = prescindible + savingsTarget;
   /** lo que sale cada mes si se cumple el plan completo */
-  const planTotal = totalBudget + savingsTarget + allowancesTotal;
+  const planTotal = totalBudget + savingsTarget;
   const minimo = totalBudget - prescindible;
   const runway = minimo > 0 ? savingsBalance / minimo : null;
 
@@ -87,11 +85,6 @@ export function SurvivalMode({
     ...(savingsTarget > 0
       ? [{ key: "ahorro", name: "Ahorro previsto (se pausa)", amount: savingsTarget }]
       : []),
-    ...allowances.map((a) => ({
-      key: `paga-${a.name}`,
-      name: `${a.name} (se pausa)`,
-      amount: a.amount,
-    })),
     ...rows.flatMap((r) =>
       r.category.is_flexible
         ? r.budget
@@ -176,12 +169,6 @@ export function SurvivalMode({
               {savingsTarget > 0 && (
                 <Row label="Ahorro previsto" amount={savingsTarget} />
               )}
-              {allowancesTotal > 0 && (
-                <Row
-                  label="Pagas personales (sobres)"
-                  amount={allowancesTotal}
-                />
-              )}
               <Row label="Total del plan" amount={planTotal} strong />
             </div>
             <div className="flex flex-col gap-1">
@@ -198,14 +185,6 @@ export function SurvivalMode({
                 <Row
                   label="El ahorro se pausa"
                   amount={savingsTarget}
-                  sign="−"
-                  color="text-amber-600"
-                />
-              )}
-              {allowancesTotal > 0 && (
-                <Row
-                  label="Las pagas se pausan"
-                  amount={allowancesTotal}
                   sign="−"
                   color="text-amber-600"
                 />
