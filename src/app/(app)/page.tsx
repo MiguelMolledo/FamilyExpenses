@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import {
   addMonths,
+  fmtRunway,
   getCategoryBudgets,
   getMonthBudget,
   getYearOverview,
@@ -27,6 +28,7 @@ import {
   ArrowLeftRight,
   PiggyBank,
   Plus,
+  Scissors,
   TrendingUp,
   TrendingDown,
   TriangleAlert,
@@ -166,6 +168,16 @@ export default async function DashboardPage({
 
   const annualMargin =
     overview.totals.expectedIncome - overview.totals.budgeted;
+
+  // Modo supervivencia (resumen; el detalle vive en Presupuesto): mínimo para
+  // vivir = presupuesto − prescindible, y cuántos meses daría la hucha
+  const survivalTotal = categoryBudgets.rows.reduce(
+    (s, r) => s + (r.budget ?? 0),
+    0
+  );
+  const survivalMin =
+    survivalTotal -
+    categoryBudgets.rows.reduce((s, r) => s + r.prescindibleBudget, 0);
 
   return (
     <div className="flex flex-col gap-4">
@@ -323,6 +335,29 @@ export default async function DashboardPage({
           </CardContent>
         </Card>
       </div>
+
+      {/* Modo supervivencia: mínimo para vivir y colchón (detalle en Presupuesto) */}
+      {survivalTotal > 0 && survivalMin > 0 && (
+        <Link
+          href="/presupuesto"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-3 py-2 text-sm"
+        >
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <Scissors className="size-4 text-amber-600" />
+            Modo supervivencia:
+          </span>
+          <span>
+            mínimo <span className="font-semibold">{eur(survivalMin)}/mes</span>
+          </span>
+          <span className="text-muted-foreground">·</span>
+          <span>
+            la hucha da para{" "}
+            <span className="font-semibold text-green-600">
+              {fmtRunway(savingsBalance / survivalMin)}
+            </span>
+          </span>
+        </Link>
+      )}
 
       {/* Sectores: a dónde van los ingresos del mes */}
       {budget.realIncome > 0 && categoryRows.length > 0 && (

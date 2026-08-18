@@ -25,6 +25,17 @@ export function effectiveBudget(
   return subs > 0 ? subs : null;
 }
 
+/** Colchón en meses legible: "7,4 meses" / "1 mes"; a partir del año, "2,1 años" */
+export function fmtRunway(months: number): string {
+  const fmt = (n: number) =>
+    n.toLocaleString("es-ES", { maximumFractionDigits: 1 });
+  if (months >= 12) {
+    const y = months / 12;
+    return `${fmt(y)} ${y < 1.05 ? "año" : "años"}`;
+  }
+  return `${fmt(months)} ${months < 1.05 ? "mes" : "meses"}`;
+}
+
 export function addMonths(month: string, n: number): string {
   const [y, m] = month.split("-").map(Number);
   const d = new Date(Date.UTC(y, m - 1 + n, 1));

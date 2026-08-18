@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Scissors } from "lucide-react";
-import type { CategoryBudgetRow } from "@/lib/budget";
+import { fmtRunway, type CategoryBudgetRow } from "@/lib/budget";
 import { eur } from "@/lib/types";
 import {
   Card,
@@ -11,17 +11,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-
-/** "7,4 meses" / "1 mes"; a partir del año, "2,1 años" */
-function fmtRunway(months: number): string {
-  const fmt = (n: number) =>
-    n.toLocaleString("es-ES", { maximumFractionDigits: 1 });
-  if (months >= 12) {
-    const y = months / 12;
-    return `${fmt(y)} ${y < 1.05 ? "año" : "años"}`;
-  }
-  return `${fmt(months)} ${months < 1.05 ? "mes" : "meses"}`;
-}
 
 const Row = ({
   label,
