@@ -347,7 +347,10 @@ export default async function DashboardPage({
             <CardTitle>Capacidad de reacción</CardTitle>
           </CardHeader>
           <CardContent>
-            <ReactionCapacity rows={categoryBudgets.rows} />
+            <ReactionCapacity
+              rows={categoryBudgets.rows}
+              savingsTarget={budget.savingsTarget}
+            />
           </CardContent>
         </Card>
       )}
