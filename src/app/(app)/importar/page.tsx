@@ -198,9 +198,35 @@ export default function ImportarPage() {
     }
   }
 
+  // Escritorio: cada movimiento es una fila de tabla (marca, fecha, concepto,
+  // categoría, fijo, importe, avisos, ingreso al que corresponde)
+  const rowCols =
+    "@3xl:grid @3xl:grid-cols-[16px_132px_minmax(0,1.4fr)_minmax(0,1.6fr)_60px_110px_auto_auto] @3xl:items-center @3xl:gap-3";
+
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">Importar extracto</h1>
+      <div className="flex flex-col gap-4 @3xl:flex-row @3xl:items-center @3xl:justify-between">
+        <h1 className="text-xl font-semibold">Importar extracto</h1>
+        {rows.length > 0 && (
+          <div className="flex items-center justify-between gap-2 @3xl:justify-end @3xl:gap-3">
+            <p className="text-sm text-muted-foreground">
+              {fileName && <span className="font-medium">{fileName}</span>} ·{" "}
+              {selected.length} de {rows.length} seleccionados
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={cancel} disabled={committing}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={commit}
+                disabled={committing || selected.length === 0}
+              >
+                {committing ? "Importando…" : `Importar ${selected.length}`}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {rows.length === 0 && (
         <Card>
@@ -238,24 +264,6 @@ export default function ImportarPage() {
 
       {rows.length > 0 && (
         <>
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm text-muted-foreground">
-              {fileName && <span className="font-medium">{fileName}</span>} ·{" "}
-              {selected.length} de {rows.length} seleccionados
-            </p>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={cancel} disabled={committing}>
-                Cancelar
-              </Button>
-              <Button
-                onClick={commit}
-                disabled={committing || selected.length === 0}
-              >
-                {committing ? "Importando…" : `Importar ${selected.length}`}
-              </Button>
-            </div>
-          </div>
-
           <div className="flex items-center gap-3 text-sm">
             <label className="flex items-center gap-2">
               <Checkbox
@@ -275,15 +283,37 @@ export default function ImportarPage() {
             )}
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 @3xl:gap-0 @3xl:divide-y @3xl:rounded-xl @3xl:bg-card @3xl:ring-1 @3xl:ring-foreground/10">
+            {/* Cabecera de columnas, solo en escritorio */}
+            <div
+              className={cn(
+                "hidden px-4 py-2 text-xs font-medium text-muted-foreground",
+                rowCols
+              )}
+            >
+              <span />
+              <span>Fecha</span>
+              <span>Concepto</span>
+              <span>Categoría › subcategoría</span>
+              <span className="text-center">Fijo</span>
+              <span className="text-right">Importe</span>
+              <span />
+              <span />
+            </div>
             {rows.map((row, i) => (
               <Card
                 key={row.dedup_hash + i}
-                className={cn(!row.checked && "opacity-60")}
+                className={cn(
+                  !row.checked && "opacity-60",
+                  "@3xl:rounded-none @3xl:bg-transparent @3xl:py-0 @3xl:ring-0"
+                )}
               >
-                <CardContent className="flex flex-col gap-2 py-3">
-                  <div className="flex items-center gap-2">
+                <CardContent
+                  className={cn("flex flex-col gap-2 py-3 @3xl:py-2", rowCols)}
+                >
+                  <div className="flex items-center gap-2 @3xl:contents">
                     <Checkbox
+                      className="@3xl:order-1"
                       checked={row.checked}
                       onCheckedChange={(c) =>
                         update(i, { checked: c === true })
@@ -294,11 +324,11 @@ export default function ImportarPage() {
                       onChange={(e) =>
                         update(i, { description: e.target.value })
                       }
-                      className="h-8 flex-1 text-sm"
+                      className="h-8 flex-1 text-sm @3xl:order-3"
                     />
                     <span
                       className={cn(
-                        "shrink-0 font-semibold",
+                        "shrink-0 font-semibold tabular-nums @3xl:order-6 @3xl:text-right",
                         row.type === "income"
                           ? "text-green-600"
                           : "text-red-600"
@@ -308,14 +338,14 @@ export default function ImportarPage() {
                       {eur(row.amount)}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 pl-7">
+                  <div className="flex items-center gap-2 pl-7 @3xl:contents">
                     <Input
                       type="date"
                       value={row.date}
                       onChange={(e) => update(i, { date: e.target.value })}
-                      className="h-8 w-36 text-xs"
+                      className="h-8 w-36 text-xs @3xl:order-2 @3xl:w-full"
                     />
-                    <div className="flex-1">
+                    <div className="flex-1 @3xl:order-4 @3xl:min-w-0">
                       <CategorySubcategorySelect
                         categories={categories}
                         subcategories={subcategories}
@@ -328,42 +358,48 @@ export default function ImportarPage() {
                         className="h-8 flex-1 text-xs"
                       />
                     </div>
-                    {row.duplicate && (
-                      <Badge
-                        variant="destructive"
-                        className="shrink-0 text-[10px]"
-                        title={
-                          row.exact_duplicate
-                            ? "Ya está importado (misma fecha, importe y concepto)"
-                            : "Ya hay un movimiento ese día con el mismo importe (con otro texto)"
-                        }
-                      >
-                        {row.exact_duplicate
-                          ? "ya importado"
-                          : "posible duplicado"}
-                      </Badge>
-                    )}
-                    {row.ai && (
-                      <Sparkles
-                        className="size-3.5 shrink-0 text-amber-500"
-                        aria-label="Sugerido por IA"
-                      />
-                    )}
+                    <div className="flex items-center gap-2 empty:hidden @3xl:order-7 @3xl:empty:block">
+                      {row.duplicate && (
+                        <Badge
+                          variant="destructive"
+                          className="shrink-0 text-[10px]"
+                          title={
+                            row.exact_duplicate
+                              ? "Ya está importado (misma fecha, importe y concepto)"
+                              : "Ya hay un movimiento ese día con el mismo importe (con otro texto)"
+                          }
+                        >
+                          {row.exact_duplicate
+                            ? "ya importado"
+                            : "posible duplicado"}
+                        </Badge>
+                      )}
+                      {row.ai && (
+                        <Sparkles
+                          className="size-3.5 shrink-0 text-amber-500"
+                          aria-label="Sugerido por IA"
+                        />
+                      )}
+                    </div>
                   </div>
-                  {row.type === "expense" && (
-                    <label className="flex items-center gap-2 pl-7 text-xs text-muted-foreground">
+                  {row.type === "expense" ? (
+                    <label className="flex items-center gap-2 pl-7 text-xs text-muted-foreground @3xl:order-5 @3xl:justify-center @3xl:pl-0">
                       <Checkbox
                         checked={row.is_fixed}
                         onCheckedChange={(c) =>
                           update(i, { is_fixed: c === true })
                         }
                       />
-                      Gasto fijo (recibo previsto; si no, cuenta como variable)
+                      <span className="@3xl:hidden">
+                        Gasto fijo (recibo previsto; si no, cuenta como variable)
+                      </span>
                     </label>
+                  ) : (
+                    <span className="hidden @3xl:order-5 @3xl:block" />
                   )}
                   {row.type === "income" && recurringIncomes.length > 0 && (
-                    <div className="flex items-center gap-2 pl-7 text-xs">
-                      <span className="text-muted-foreground">
+                    <div className="flex items-center gap-2 pl-7 text-xs @3xl:order-8 @3xl:pl-0">
+                      <span className="text-muted-foreground @3xl:hidden">
                         ¿Corresponde a…?
                       </span>
                       <Select

@@ -42,7 +42,7 @@ export function BottomNav() {
   const moreActive = moreItems.some((i) => pathname.startsWith(i.href));
 
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 pb-[env(safe-area-inset-bottom)]">
+    <nav className="fixed bottom-0 inset-x-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 pb-[env(safe-area-inset-bottom)] lg:hidden">
       <div className="mx-auto flex max-w-lg items-stretch justify-around">
         {tabs.map(({ href, label, icon: Icon }) => {
           const active =

@@ -40,20 +40,23 @@ export default async function HuchaPage() {
         )}
       </div>
 
-      <Card>
-        <CardContent className="pt-6 text-center">
-          <PiggyBank className="mx-auto mb-1 size-8 text-pink-500" />
-          <p className="text-sm text-muted-foreground">Ahorrado</p>
-          <p className="text-4xl font-bold">{eur(balance)}</p>
-          {target > 0 && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              Objetivo: {eur(target)} al mes
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      {/* Escritorio: saldo a la izquierda, lista a la derecha */}
+      <div className="grid gap-4 @3xl:grid-cols-[400px_minmax(0,1fr)] @3xl:items-start @3xl:gap-6">
+        <Card>
+          <CardContent className="pt-6 text-center @3xl:py-6">
+            <PiggyBank className="mx-auto mb-1 size-8 text-pink-500" />
+            <p className="text-sm text-muted-foreground">Ahorrado</p>
+            <p className="text-4xl font-bold">{eur(balance)}</p>
+            {target > 0 && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Objetivo: {eur(target)} al mes
+              </p>
+            )}
+          </CardContent>
+        </Card>
 
-      <MovementsList movements={movements} />
+        <MovementsList movements={movements} />
+      </div>
     </div>
   );
 }

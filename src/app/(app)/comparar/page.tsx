@@ -126,6 +126,8 @@ export default async function CompararPage({
       <h1 className="text-xl font-semibold">Comparar meses</h1>
       <MonthPickers months={months} a={a} b={b} />
 
+      {/* Escritorio: resumen y categorías lado a lado */}
+      <div className="flex flex-col gap-4 @3xl:grid @3xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] @3xl:items-start @3xl:gap-6">
       <Card>
         <CardHeader>
           <CardTitle>Resumen</CardTitle>
@@ -204,6 +206,7 @@ export default async function CompararPage({
           ))}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

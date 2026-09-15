@@ -52,7 +52,7 @@ export function FilterBar({
         }}
         onValueChange={(v) => onCategory(v ?? "")}
       >
-        <SelectTrigger className="h-9 w-36 shrink-0 text-xs">
+        <SelectTrigger className="h-9 w-36 shrink-0 text-xs @3xl:w-52 @3xl:text-sm">
           <SelectValue placeholder="Categoría" />
         </SelectTrigger>
         <SelectContent>

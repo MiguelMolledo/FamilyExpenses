@@ -101,6 +101,11 @@ export function TransactionsList({
     );
   }
 
+  // Escritorio: cada movimiento es una fila con columnas (concepto, fecha,
+  // categoría, importe); en móvil sigue siendo concepto + línea de detalle
+  const rowCols =
+    "@3xl:grid @3xl:grid-cols-[minmax(0,1fr)_90px_260px_120px_32px] @3xl:gap-3";
+
   return (
     <div className="flex flex-col gap-3">
       <FilterBar
@@ -110,6 +115,20 @@ export function TransactionsList({
         onCategory={setCatFilter}
         categories={categories}
       />
+      {groups.length > 0 && (
+        <div
+          className={cn(
+            "hidden px-4 text-xs font-medium text-muted-foreground",
+            rowCols
+          )}
+        >
+          <span>Concepto</span>
+          <span>Fecha</span>
+          <span>Categoría › subcategoría</span>
+          <span className="text-right">Importe</span>
+          <span />
+        </div>
+      )}
       {groups.length === 0 && (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
@@ -133,8 +152,18 @@ export function TransactionsList({
                 {signedEur(g.net)}
               </span>
             </div>
-            {g.items.map((t) => (
-          <div key={t.id} className="flex items-center gap-2 py-2.5">
+            {g.items.map((t) => {
+              const catName = t.category_id ? catById.get(t.category_id) : "";
+              const subName = t.subcategory_id
+                ? subById.get(t.subcategory_id)
+                : "";
+              const catPath =
+                (catName ? catName : "") + (subName ? ` › ${subName}` : "");
+              return (
+          <div
+            key={t.id}
+            className={cn("flex items-center gap-2 py-2.5 @3xl:py-2", rowCols)}
+          >
             <TransactionDialog
               month={month}
               categories={categories}
@@ -159,20 +188,22 @@ export function TransactionsList({
                     <Sparkles className="size-3.5 shrink-0 text-amber-500" />
                   )}
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground @3xl:hidden">
                   {shortDate(t.date)}
-                  {t.category_id && catById.get(t.category_id)
-                    ? ` · ${catById.get(t.category_id)}`
-                    : ""}
-                  {t.subcategory_id && subById.get(t.subcategory_id)
-                    ? ` › ${subById.get(t.subcategory_id)}`
-                    : ""}
+                  {catName ? ` · ${catName}` : ""}
+                  {subName ? ` › ${subName}` : ""}
                 </p>
               </button>
             </TransactionDialog>
+            <span className="hidden text-xs text-muted-foreground @3xl:block">
+              {shortDate(t.date)}
+            </span>
+            <span className="hidden truncate text-xs text-muted-foreground @3xl:block">
+              {catPath}
+            </span>
             <span
               className={cn(
-                "font-semibold",
+                "font-semibold tabular-nums @3xl:text-right",
                 t.type === "income" ? "text-green-600" : "text-red-600"
               )}
             >
@@ -188,7 +219,8 @@ export function TransactionsList({
               <Trash2 className="size-4" />
             </Button>
           </div>
-            ))}
+              );
+            })}
           </CardContent>
         </Card>
       ))}

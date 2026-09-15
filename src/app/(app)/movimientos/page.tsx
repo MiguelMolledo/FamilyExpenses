@@ -35,39 +35,48 @@ export default async function MovimientosPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Movimientos</h1>
-        <TransactionDialog
-          month={month}
+      {/* Escritorio: título · mes · acciones en una sola fila */}
+      <div className="flex flex-col gap-4 @3xl:grid @3xl:grid-cols-[1fr_auto_1fr] @3xl:items-center">
+        <div className="flex items-center justify-between @3xl:contents">
+          <h1 className="text-xl font-semibold @3xl:order-1">Movimientos</h1>
+          <div className="@3xl:order-3 @3xl:justify-self-end">
+            <TransactionDialog
+              month={month}
+              categories={categoriesQ.data ?? []}
+              subcategories={subcategoriesQ.data ?? []}
+              recurringIncomes={budget.recurringIncomes}
+              pets={petsQ.data ?? []}
+              profiles={profilesQ.data ?? []}
+            >
+              <Button size="sm">
+                <Plus className="size-4" />
+                Añadir
+              </Button>
+            </TransactionDialog>
+          </div>
+        </div>
+        <MonthNav month={month} className="@3xl:order-2" />
+      </div>
+
+      {/* Escritorio: lista a la izquierda, resumen fijo a la derecha */}
+      <div className="flex flex-col gap-4 @3xl:grid @3xl:grid-cols-[minmax(0,1fr)_340px] @3xl:items-start @3xl:gap-6">
+        <div className="@3xl:sticky @3xl:top-8 @3xl:order-2">
+          <MonthSummary budget={budget} />
+        </div>
+
+        <TransactionsList
+          transactions={budget.transactions}
           categories={categoriesQ.data ?? []}
           subcategories={subcategoriesQ.data ?? []}
           recurringIncomes={budget.recurringIncomes}
           pets={petsQ.data ?? []}
           profiles={profilesQ.data ?? []}
-        >
-          <Button size="sm">
-            <Plus className="size-4" />
-            Añadir
-          </Button>
-        </TransactionDialog>
+          month={month}
+          splitIds={[
+            ...new Set((splitsQ.data ?? []).map((s) => s.transaction_id as string)),
+          ]}
+        />
       </div>
-
-      <MonthNav month={month} />
-
-      <MonthSummary budget={budget} />
-
-      <TransactionsList
-        transactions={budget.transactions}
-        categories={categoriesQ.data ?? []}
-        subcategories={subcategoriesQ.data ?? []}
-        recurringIncomes={budget.recurringIncomes}
-        pets={petsQ.data ?? []}
-        profiles={profilesQ.data ?? []}
-        month={month}
-        splitIds={[
-          ...new Set((splitsQ.data ?? []).map((s) => s.transaction_id as string)),
-        ]}
-      />
     </div>
   );
 }

@@ -60,6 +60,13 @@ export function ChatFloat() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
 
+  // En escritorio el panel va acoplado a la derecha y el contenido se
+  // estrecha en vez de quedar tapado: el layout lee este atributo
+  useEffect(() => {
+    document.documentElement.toggleAttribute("data-chat-open", open);
+    return () => document.documentElement.removeAttribute("data-chat-open");
+  }, [open]);
+
   function send(text: string) {
     const t = text.trim();
     if (!t || busy) return;
@@ -112,7 +119,7 @@ export function ChatFloat() {
         onClick={() => setOpen(true)}
         aria-label="Abrir asistente"
         className={cn(
-          "fixed bottom-20 right-4 z-50 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform active:scale-95",
+          "fixed bottom-20 right-4 z-50 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform active:scale-95 lg:bottom-6 lg:right-6",
           open && "hidden"
         )}
       >
@@ -121,7 +128,7 @@ export function ChatFloat() {
 
       {/* Panel de chat */}
       {open && (
-        <div className="fixed inset-x-0 bottom-0 z-50 mx-auto flex h-[75dvh] w-full max-w-lg flex-col rounded-t-2xl border bg-background shadow-2xl">
+        <div className="fixed inset-x-0 bottom-0 z-50 mx-auto flex h-[75dvh] w-full max-w-lg flex-col rounded-t-2xl border bg-background shadow-2xl lg:inset-y-0 lg:left-auto lg:right-0 lg:h-auto lg:w-[400px] lg:max-w-none lg:rounded-none lg:border-y-0 lg:border-r-0">
           <div className="flex items-center justify-between border-b px-4 py-3">
             <p className="font-semibold">Asistente 💶</p>
             <Button variant="ghost" size="icon" onClick={() => setOpen(false)}>

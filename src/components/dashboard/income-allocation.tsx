@@ -90,8 +90,8 @@ export function IncomeAllocation({
   });
 
   return (
-    <div className="flex items-center gap-4">
-      <svg viewBox="0 0 42 42" className="size-36 shrink-0" role="img"
+    <div className="flex items-center gap-4 @3xl:gap-6">
+      <svg viewBox="0 0 42 42" className="size-36 shrink-0 @3xl:size-44" role="img"
         aria-label="Distribución de los ingresos del mes por categoría">
         {arcs.map((a) => (
           <circle

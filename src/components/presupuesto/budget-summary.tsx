@@ -84,8 +84,13 @@ export function BudgetSummary({ budget }: { budget: MonthBudget }) {
             ¿Qué significa esto?
           </p>
         </button>
-        {open && (
-          <div className="mx-auto mt-3 flex max-w-sm flex-col gap-3 border-t pt-3 text-sm">
+        {/* En escritorio el desglose va siempre a la vista: hay sitio */}
+        <div
+          className={cn(
+            "mx-auto mt-3 max-w-sm flex-col gap-3 border-t pt-3 text-sm @3xl:flex",
+            open ? "flex" : "hidden"
+          )}
+        >
             <div className="flex flex-col gap-1">
               <p className="text-xs font-medium uppercase text-muted-foreground">
                 El plan del mes
@@ -165,8 +170,7 @@ export function BudgetSummary({ budget }: { budget: MonthBudget }) {
                 }
               />
             </div>
-          </div>
-        )}
+        </div>
       </CardContent>
     </Card>
   );

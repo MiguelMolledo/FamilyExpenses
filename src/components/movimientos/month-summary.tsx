@@ -82,8 +82,13 @@ export function MonthSummary({ budget }: { budget: MonthBudget }) {
             ¿De dónde sale el disponible?
           </p>
         </button>
-        {open && (
-          <div className="mx-auto mt-3 flex max-w-sm flex-col gap-1 border-t pt-3 text-sm">
+        {/* En escritorio el desglose va siempre a la vista: hay sitio */}
+        <div
+          className={cn(
+            "mx-auto mt-3 max-w-sm flex-col gap-1 border-t pt-3 text-sm @3xl:flex",
+            open ? "flex" : "hidden"
+          )}
+        >
             <Row
               label="Ingresos recurrentes (recibidos o previstos)"
               amount={budget.receivedIncome}
@@ -139,8 +144,7 @@ export function MonthSummary({ budget }: { budget: MonthBudget }) {
                 {eur(budget.available)}
               </span>
             </div>
-          </div>
-        )}
+        </div>
       </CardContent>
     </Card>
   );

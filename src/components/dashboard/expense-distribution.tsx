@@ -95,7 +95,7 @@ export function ExpenseDistribution({ rows }: { rows: CategoryAmount[] }) {
           );
         })}
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5 @3xl:grid @3xl:grid-cols-2 @3xl:gap-x-8">
         {segments.map((s) => (
           <CategoryBreakdown
             key={s.name}

@@ -181,33 +181,35 @@ export default async function DashboardPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Hola 👋</h1>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/comparar"
-            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeftRight className="size-4" />
-            Comparar
-          </Link>
-          <TransactionDialog
-            month={month}
-            categories={categoriesQ.data ?? []}
-            subcategories={subcategoriesQ.data ?? []}
-            recurringIncomes={budget.recurringIncomes}
-            pets={petsQ.data ?? []}
-            profiles={profilesQ.data ?? []}
-          >
-            <Button size="sm">
-              <Plus className="size-4" />
-              Añadir
-            </Button>
-          </TransactionDialog>
+      {/* Escritorio: título · mes · acciones en una sola fila */}
+      <div className="flex flex-col gap-4 @3xl:grid @3xl:grid-cols-[1fr_auto_1fr] @3xl:items-center">
+        <div className="flex items-center justify-between @3xl:contents">
+          <h1 className="text-xl font-semibold @3xl:order-1">Hola 👋</h1>
+          <div className="flex items-center gap-3 @3xl:order-3 @3xl:justify-self-end">
+            <Link
+              href="/comparar"
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeftRight className="size-4" />
+              Comparar
+            </Link>
+            <TransactionDialog
+              month={month}
+              categories={categoriesQ.data ?? []}
+              subcategories={subcategoriesQ.data ?? []}
+              recurringIncomes={budget.recurringIncomes}
+              pets={petsQ.data ?? []}
+              profiles={profilesQ.data ?? []}
+            >
+              <Button size="sm">
+                <Plus className="size-4" />
+                Añadir
+              </Button>
+            </TransactionDialog>
+          </div>
         </div>
+        <MonthNav month={month} base="/" className="@3xl:order-2" />
       </div>
-
-      <MonthNav month={month} base="/" />
 
       {!budget.prevClosed && budget.prevHasActivity && (
         <Link
@@ -222,15 +224,18 @@ export default async function DashboardPage({
         </Link>
       )}
 
-      {/* Disponible este mes */}
+      {/* Disponible, aviso de riesgo, KPIs y supervivencia: en móvil en ese
+          orden; en escritorio, una fila de cuatro y los dos avisos debajo */}
+      <div className="flex flex-col gap-4 @3xl:grid @3xl:grid-cols-[1.6fr_1fr_1fr_1fr]">
       <Card
         className={cn(
+          "@3xl:col-start-1 @3xl:row-start-1 @3xl:h-full",
           budget.available >= 0
             ? "border-green-300 dark:border-green-800"
             : "border-red-300 dark:border-red-800"
         )}
       >
-        <CardContent className="pt-6 text-center">
+        <CardContent className="pt-6 text-center @3xl:flex @3xl:h-full @3xl:flex-col @3xl:justify-center @3xl:px-6 @3xl:pt-0 @3xl:text-left">
           <p className="text-sm text-muted-foreground">Disponible este mes</p>
           <p
             className={cn(
@@ -255,7 +260,12 @@ export default async function DashboardPage({
       {riskRows.length > 0 && (
         <Link
           href="/presupuesto"
-          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-3 py-2 text-sm"
+          className={cn(
+            "flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-3 py-2 text-sm",
+            riskRows.length > 0 && survivalTotal > 0 && survivalMin > 0
+              ? "@3xl:col-span-2"
+              : "@3xl:col-span-4"
+          )}
         >
           <span className="flex items-center gap-1 text-muted-foreground">
             <TriangleAlert className="size-4 text-amber-500" />
@@ -279,38 +289,38 @@ export default async function DashboardPage({
       )}
 
       {/* KPIs */}
-      <div className="grid grid-cols-3 gap-2">
-        <Link href="/presupuesto">
+      <div className="grid grid-cols-3 gap-2 @3xl:contents">
+        <Link href="/presupuesto" className="@3xl:col-start-2 @3xl:row-start-1">
           <Card className="h-full">
             <CardContent className="pt-4 pb-3 text-center">
               <p className="text-xs text-muted-foreground capitalize">
                 Gastado {monthLabel}
               </p>
-              <p className="text-lg font-bold text-red-600">
+              <p className="text-lg font-bold text-red-600 @3xl:text-2xl">
                 {eur(budget.realExpenses)}
               </p>
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-[10px] text-muted-foreground @3xl:text-[11px]">
                 presupuesto {eur(budget.budgeted)}
               </p>
             </CardContent>
           </Card>
         </Link>
-        <Link href="/hucha">
+        <Link href="/hucha" className="@3xl:col-start-3 @3xl:row-start-1">
           <Card className="h-full">
             <CardContent className="pt-4 pb-3 text-center">
               <p className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
                 <PiggyBank className="size-3.5 text-pink-500" />
                 Hucha
               </p>
-              <p className="text-lg font-bold">{eur(savingsBalance)}</p>
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-lg font-bold @3xl:text-2xl">{eur(savingsBalance)}</p>
+              <p className="text-[10px] text-muted-foreground @3xl:text-[11px]">
                 {savedThisYear >= 0 ? "+" : "−"}
                 {eur(Math.abs(savedThisYear))} este año
               </p>
             </CardContent>
           </Card>
         </Link>
-        <Card>
+        <Card className="@3xl:col-start-4 @3xl:row-start-1">
           <CardContent className="pt-4 pb-3 text-center">
             <p className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
               {savingsAhead >= 0 ? (
@@ -322,14 +332,14 @@ export default async function DashboardPage({
             </p>
             <p
               className={cn(
-                "text-lg font-bold",
+                "text-lg font-bold @3xl:text-2xl",
                 savingsAhead >= 0 ? "text-green-600" : "text-red-600"
               )}
             >
               {savingsAhead >= 0 ? "+" : "−"}
               {eur(Math.abs(savingsAhead))}
             </p>
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-[10px] text-muted-foreground @3xl:text-[11px]">
               objetivo {eur(expectedSavedYtd)} a estas alturas
             </p>
           </CardContent>
@@ -340,7 +350,12 @@ export default async function DashboardPage({
       {survivalTotal > 0 && survivalMin > 0 && (
         <Link
           href="/presupuesto"
-          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-3 py-2 text-sm"
+          className={cn(
+            "flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-3 py-2 text-sm",
+            riskRows.length > 0 && survivalTotal > 0 && survivalMin > 0
+              ? "@3xl:col-span-2"
+              : "@3xl:col-span-4"
+          )}
         >
           <span className="flex items-center gap-1 text-muted-foreground">
             <Scissors className="size-4 text-amber-600" />
@@ -358,7 +373,10 @@ export default async function DashboardPage({
           </span>
         </Link>
       )}
+      </div>
 
+      {/* Gráficos: en escritorio, a dos columnas */}
+      <div className="flex flex-col gap-4 @3xl:grid @3xl:grid-cols-2">
       {/* Sectores: a dónde van los ingresos del mes */}
       {budget.realIncome > 0 && categoryRows.length > 0 && (
         <Card>
@@ -426,15 +444,17 @@ export default async function DashboardPage({
           />
         </CardContent>
       </Card>
+      </div>
 
-      {/* Anual */}
+      {/* Anual: en escritorio, gráfico a todo el ancho y totales en columna */}
       <Card>
         <CardHeader>
           <CardTitle>Año {year}: real vs previsto</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex flex-col gap-4 @3xl:grid @3xl:grid-cols-[minmax(0,1fr)_260px] @3xl:items-start @3xl:gap-6">
           <YearChart overview={overview} currentMonth={month} />
-          <div className="grid grid-cols-3 gap-2 text-center text-sm">
+          <div className="flex flex-col gap-4 @3xl:gap-2">
+          <div className="grid grid-cols-3 gap-2 text-center text-sm @3xl:grid-cols-1">
             <div className="rounded-lg bg-muted p-2">
               <p className="text-xs text-muted-foreground">Ingresos previstos</p>
               <p className="font-semibold text-green-600">
@@ -459,7 +479,7 @@ export default async function DashboardPage({
               </p>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2 text-center text-sm">
+          <div className="grid grid-cols-2 gap-2 text-center text-sm @3xl:grid-cols-1">
             <div className="rounded-lg bg-muted p-2">
               <p className="text-xs text-muted-foreground">
                 Ingresos acumulados
@@ -482,6 +502,7 @@ export default async function DashboardPage({
                 )}
               </p>
             </div>
+          </div>
           </div>
         </CardContent>
       </Card>

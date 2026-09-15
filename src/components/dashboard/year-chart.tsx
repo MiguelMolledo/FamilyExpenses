@@ -49,7 +49,7 @@ export function YearChart({
           Previsto
         </span>
       </div>
-      <div className="flex h-40 items-end gap-1.5">
+      <div className="flex h-40 items-end gap-1.5 @3xl:h-56 @3xl:gap-2">
         {overview.months.map((m, i) => {
           const isFuture = m.month > currentMonth;
           const isCurrent = m.month === currentMonth;
@@ -61,7 +61,7 @@ export function YearChart({
             >
               <div
                 className={cn(
-                  "relative flex h-32 w-full items-end justify-center gap-[2px] rounded-sm",
+                  "relative flex h-32 w-full items-end justify-center gap-[2px] rounded-sm @3xl:h-48",
                   isCurrent && "bg-muted/60"
                 )}
               >

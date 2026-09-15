@@ -58,52 +58,55 @@ export default async function MascotasPage() {
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">Mascotas</h1>
 
-      <Card>
-        <CardContent className="grid grid-cols-2 gap-2 pt-6 text-center">
-          <div>
-            <p className="text-xs text-muted-foreground">Total {year}</p>
-            <p className="text-2xl font-bold">{eur(totalYear)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Media mensual</p>
-            <p className="text-2xl font-bold">
-              {eur(totalYear / elapsedMonths)}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Escritorio: totales a la izquierda, coste por animal a la derecha */}
+      <div className="grid gap-4 @3xl:grid-cols-[360px_minmax(0,1fr)] @3xl:items-start @3xl:gap-6">
+        <Card>
+          <CardContent className="grid grid-cols-2 gap-2 pt-6 text-center">
+            <div>
+              <p className="text-xs text-muted-foreground">Total {year}</p>
+              <p className="text-2xl font-bold">{eur(totalYear)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Media mensual</p>
+              <p className="text-2xl font-bold">
+                {eur(totalYear / elapsedMonths)}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Coste por animal en {year}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {pets.map((pet) => {
-            const total = totalByPet.get(pet.id) ?? 0;
-            return (
-              <div key={pet.id} className="flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-2 font-medium">
-                    <PawPrint className="size-4 text-muted-foreground" />
-                    {pet.name}
-                  </span>
-                  <span className="font-semibold">{eur(total)}</span>
+        <Card>
+          <CardHeader>
+            <CardTitle>Coste por animal en {year}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {pets.map((pet) => {
+              const total = totalByPet.get(pet.id) ?? 0;
+              return (
+                <div key={pet.id} className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 font-medium">
+                      <PawPrint className="size-4 text-muted-foreground" />
+                      {pet.name}
+                    </span>
+                    <span className="font-semibold">{eur(total)}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-orange-400"
+                      style={{ width: `${(total / maxTotal) * 100}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {eur(total / elapsedMonths)}/mes de media · reparto por
+                    defecto {pet.default_split_pct}%
+                  </p>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-orange-400"
-                    style={{ width: `${(total / maxTotal) * 100}%` }}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {eur(total / elapsedMonths)}/mes de media · reparto por
-                  defecto {pet.default_split_pct}%
-                </p>
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
+              );
+            })}
+          </CardContent>
+        </Card>
+      </div>
 
       <p className="text-xs text-muted-foreground">
         Los importes salen de los gastos con reparto entre mascotas. Al añadir

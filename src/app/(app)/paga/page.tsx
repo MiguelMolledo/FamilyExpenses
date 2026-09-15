@@ -55,6 +55,8 @@ export default async function PagaPage() {
         </Card>
       )}
 
+      {/* Escritorio: cada persona en su columna */}
+      <div className="flex flex-col gap-6 @3xl:grid @3xl:grid-cols-2 @3xl:items-start">
       {profiles.map((p) => {
         const own = allowances.filter((a) => a.profile_id === p.user_id);
         const ownMovements = movements.filter(
@@ -105,6 +107,7 @@ export default async function PagaPage() {
           </section>
         );
       })}
+      </div>
     </div>
   );
 }

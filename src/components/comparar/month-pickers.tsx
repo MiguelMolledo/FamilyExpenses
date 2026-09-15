@@ -34,7 +34,7 @@ export function MonthPickers({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 @3xl:max-w-2xl">
       <Select value={a} items={items} onValueChange={(v) => v && nav(v, b)}>
         <SelectTrigger className="h-9 flex-1 capitalize">
           <SelectValue />

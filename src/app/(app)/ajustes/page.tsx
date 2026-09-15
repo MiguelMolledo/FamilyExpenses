@@ -35,22 +35,27 @@ export default async function AjustesPage() {
         <h1 className="text-xl font-semibold">Ajustes</h1>
         <LogoutButton />
       </div>
-      <FamilySection family={family.data} members={profiles.data ?? []} />
-      <SavingsTargetSection plan={plan.data} />
-      <PersonalAllowancesSection
-        members={profiles.data ?? []}
-        allowances={allowances.data ?? []}
-      />
-      <AutoMovementsSection
-        autoMovements={autoMovements.data ?? []}
-        categories={categories.data ?? []}
-        subcategories={subcategories.data ?? []}
-      />
-      <PetsSection pets={pets.data ?? []} />
-      <CategoriesSection
-        categories={categories.data ?? []}
-        subcategories={subcategories.data ?? []}
-      />
+      {/* Escritorio: ajustes cortos a la izquierda, categorías (largo) a la derecha */}
+      <div className="flex flex-col gap-6 @3xl:grid @3xl:grid-cols-2 @3xl:items-start">
+        <div className="flex flex-col gap-6">
+          <FamilySection family={family.data} members={profiles.data ?? []} />
+          <SavingsTargetSection plan={plan.data} />
+          <PersonalAllowancesSection
+            members={profiles.data ?? []}
+            allowances={allowances.data ?? []}
+          />
+          <AutoMovementsSection
+            autoMovements={autoMovements.data ?? []}
+            categories={categories.data ?? []}
+            subcategories={subcategories.data ?? []}
+          />
+          <PetsSection pets={pets.data ?? []} />
+        </div>
+        <CategoriesSection
+          categories={categories.data ?? []}
+          subcategories={subcategories.data ?? []}
+        />
+      </div>
     </div>
   );
 }

@@ -205,6 +205,11 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
     (a, b) => (b.budget ?? 0) - (a.budget ?? 0)
   );
 
+  // Escritorio: cada categoría es una fila con columnas
+  // (nombre, gasto con barra, disponible, presupuesto)
+  const rowCols =
+    "@3xl:grid @3xl:grid-cols-[180px_minmax(0,1fr)_150px_170px] @3xl:gap-x-4";
+
   return (
     <Card>
       <CardHeader>
@@ -216,6 +221,18 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col divide-y">
+        {/* Cabecera de columnas, solo en escritorio */}
+        <div
+          className={cn(
+            "hidden pb-1.5 text-xs font-medium text-muted-foreground",
+            rowCols
+          )}
+        >
+          <span>Categoría</span>
+          <span>Gastado</span>
+          <span className="text-right">Disponible</span>
+          <span className="text-right">Presupuesto</span>
+        </div>
         {sortedRows.map((r) => {
           const over = r.available != null && r.available < 0;
           const pct =
@@ -229,11 +246,26 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
           const subsSum = subsBudgetSum(r);
           const unassigned =
             catOwn != null && subsSum > 0 ? catOwn - subsSum : 0;
+          const availableText =
+            r.available == null
+              ? ""
+              : (over
+                  ? `${eur(-r.available)} pasados`
+                  : `${eur(r.available)} disponibles`) +
+                (r.accumulated != null && Math.abs(r.accumulated) >= 0.01
+                  ? ` (${r.accumulated > 0 ? "+" : ""}${eur(r.accumulated)} del año)`
+                  : "");
           return (
-            <div key={r.category.id} className="flex flex-col gap-1.5 py-2.5">
-              <div className="flex items-center gap-2">
+            <div
+              key={r.category.id}
+              className={cn(
+                "flex flex-col gap-1.5 py-2.5 @3xl:items-center @3xl:gap-y-0",
+                rowCols
+              )}
+            >
+              <div className="flex items-center gap-2 @3xl:contents">
                 <button
-                  className="flex flex-1 items-center gap-1 text-left font-medium"
+                  className="flex flex-1 items-center gap-1 text-left font-medium @3xl:order-1"
                   onClick={() =>
                     setExpanded((p) => ({
                       ...p,
@@ -248,28 +280,30 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
                   )}
                   {r.category.name}
                 </button>
-                <UnitToggle id={r.category.id} />
-                <AmountInput
-                  placeholder={
-                    (units[r.category.id] ?? "month") === "month"
-                      ? "€/mes"
-                      : "€/año"
-                  }
-                  className="h-8 w-24 text-right text-sm"
-                  defaultValue={displayValue(r.category.id, r.budget)}
-                  key={`${r.category.id}-${r.budget ?? ""}-${units[r.category.id] ?? "month"}`}
-                  onChange={(e) =>
-                    setDrafts((p) => ({ ...p, [r.category.id]: e.target.value }))
-                  }
-                  onBlur={() => {
-                    const d = drafts[r.category.id];
-                    if (d !== undefined && d !== String(r.budget ?? ""))
-                      saveBudget(r, toMonthly(r.category.id, d));
-                  }}
-                />
+                <div className="flex items-center gap-2 @3xl:order-4 @3xl:justify-end">
+                  <UnitToggle id={r.category.id} />
+                  <AmountInput
+                    placeholder={
+                      (units[r.category.id] ?? "month") === "month"
+                        ? "€/mes"
+                        : "€/año"
+                    }
+                    className="h-8 w-24 text-right text-sm"
+                    defaultValue={displayValue(r.category.id, r.budget)}
+                    key={`${r.category.id}-${r.budget ?? ""}-${units[r.category.id] ?? "month"}`}
+                    onChange={(e) =>
+                      setDrafts((p) => ({ ...p, [r.category.id]: e.target.value }))
+                    }
+                    onBlur={() => {
+                      const d = drafts[r.category.id];
+                      if (d !== undefined && d !== String(r.budget ?? ""))
+                        saveBudget(r, toMonthly(r.category.id, d));
+                    }}
+                  />
+                </div>
               </div>
-              {r.budget != null && (
-                <>
+              {r.budget != null ? (
+                <div className="flex flex-col gap-1.5 @3xl:order-2">
                   <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                     <div
                       className={cn(
@@ -288,22 +322,34 @@ export function CategoryBudgets({ rows }: { rows: CategoryBudgetRow[] }) {
                       {eur(r.spent)} de {eur(r.budget)}
                       {r.fixedSpent > 0 && ` (${eur(r.fixedSpent)} en fijos)`}
                     </span>
-                    <span className={cn(over && "font-medium text-red-600")}>
-                      {r.available != null &&
-                        (over
-                          ? `${eur(-r.available)} pasados`
-                          : `${eur(r.available)} disponibles`)}
-                      {r.accumulated != null &&
-                        Math.abs(r.accumulated) >= 0.01 &&
-                        ` (${r.accumulated > 0 ? "+" : ""}${eur(
-                          r.accumulated
-                        )} del año)`}
+                    <span
+                      className={cn(
+                        "@3xl:hidden",
+                        over && "font-medium text-red-600"
+                      )}
+                    >
+                      {availableText}
                     </span>
                   </div>
-                </>
+                </div>
+              ) : (
+                <span className="hidden text-xs text-muted-foreground @3xl:order-2 @3xl:block">
+                  {r.spent > 0
+                    ? `${eur(r.spent)} gastados · sin presupuesto`
+                    : "Sin presupuesto"}
+                </span>
               )}
+              {/* Disponible en su propia columna (escritorio) */}
+              <span
+                className={cn(
+                  "hidden text-right text-xs @3xl:order-3 @3xl:block",
+                  over ? "font-medium text-red-600" : "text-muted-foreground"
+                )}
+              >
+                {availableText}
+              </span>
               {expanded[r.category.id] && (
-                <div className="flex flex-col gap-1 pl-5 pt-1">
+                <div className="flex flex-col gap-1 pl-5 pt-1 @3xl:order-5 @3xl:col-span-4 @3xl:max-w-2xl">
                   <div className="flex flex-wrap items-center gap-2">
                     <Select
                       value={r.category.rollover}

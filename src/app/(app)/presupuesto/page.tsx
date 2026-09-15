@@ -32,9 +32,11 @@ export default async function PresupuestoPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold">Presupuesto</h1>
-
-      <MonthNav month={month} base="/presupuesto" />
+      {/* Escritorio: título y mes en una sola fila */}
+      <div className="flex flex-col gap-6 @3xl:grid @3xl:grid-cols-[1fr_auto_1fr] @3xl:items-center">
+        <h1 className="text-xl font-semibold">Presupuesto</h1>
+        <MonthNav month={month} base="/presupuesto" />
+      </div>
 
       {!budget.prevClosed && budget.prevHasActivity && (
         <Link
@@ -49,23 +51,37 @@ export default async function PresupuestoPage({
         </Link>
       )}
 
-      <BudgetSummary budget={budget} />
+      {/* Escritorio: categorías a la izquierda; resumen, supervivencia,
+          ingresos y cierre apilados a la derecha. En móvil, el orden de siempre. */}
+      <div className="flex flex-col gap-6 @3xl:grid @3xl:grid-cols-[minmax(0,1fr)_340px] @3xl:items-start @3xl:gap-x-6 @3xl:gap-y-4">
+        <div className="@3xl:col-start-2 @3xl:row-start-1">
+          <BudgetSummary budget={budget} />
+        </div>
 
-      <CategoryBudgets rows={categoryBudgets.rows} />
+        <div className="@3xl:col-start-1 @3xl:row-start-1 @3xl:row-span-4">
+          <CategoryBudgets rows={categoryBudgets.rows} />
+        </div>
 
-      <SurvivalMode
-        rows={categoryBudgets.rows}
-        savingsBalance={savingsBalance}
-        savingsTarget={budget.savingsTarget}
-      />
+        <div className="@3xl:col-start-2 @3xl:row-start-2">
+          <SurvivalMode
+            rows={categoryBudgets.rows}
+            savingsBalance={savingsBalance}
+            savingsTarget={budget.savingsTarget}
+          />
+        </div>
 
-      <RecurringIncomes
-        incomes={budget.recurringIncomes}
-        profiles={profilesQ.data ?? []}
-        month={month}
-      />
+        <div className="@3xl:col-start-2 @3xl:row-start-3">
+          <RecurringIncomes
+            incomes={budget.recurringIncomes}
+            profiles={profilesQ.data ?? []}
+            month={month}
+          />
+        </div>
 
-      <CloseMonth budget={budget} />
+        <div className="@3xl:col-start-2 @3xl:row-start-4">
+          <CloseMonth budget={budget} />
+        </div>
+      </div>
     </div>
   );
 }
