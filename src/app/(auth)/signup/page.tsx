@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { usernameToEmail, normalizeUsername } from "@/lib/auth";
+import {
+  MIN_PASSWORD_LENGTH,
+  usernameToEmail,
+  normalizeUsername,
+} from "@/lib/auth";
+import { createAccount } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -35,41 +40,28 @@ export default function SignupPage() {
     const uname = normalizeUsername(username);
     const email = usernameToEmail(uname);
 
-    if (uname.length < 3) {
-      setError("El usuario debe tener al menos 3 caracteres (letras/números)");
+    // El código se valida (en el servidor) ANTES de crear el usuario en Auth:
+    // así un código erróneo no deja una cuenta huérfana a medio registrar.
+    const { error: createError } = await createAccount({
+      username,
+      password,
+      inviteCode,
+    });
+    if (createError) {
+      setError(createError);
       setLoading(false);
       return;
     }
 
-    // El código se valida ANTES de crear el usuario en Auth: así un código
-    // erróneo no deja una cuenta huérfana a medio registrar.
-    const { data: codeOk, error: codeError } = await supabase.rpc(
-      "invite_code_valid",
-      { code: inviteCode.trim() }
-    );
-    if (codeError || !codeOk) {
-      setError("Código de invitación no válido");
-      setLoading(false);
-      return;
-    }
-
-    // Alta en Auth; si el usuario ya existía (reintento), intentamos entrar.
-    const { error: signUpError } = await supabase.auth.signUp({
+    // Si el usuario ya existía (reintento), esto comprueba su contraseña.
+    const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
-    if (signUpError) {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (signInError) {
-        setError(
-          "Ese usuario ya existe o la contraseña no es válida (mín. 6 caracteres)"
-        );
-        setLoading(false);
-        return;
-      }
+    if (signInError) {
+      setError("Ese usuario ya existe y la contraseña no coincide");
+      setLoading(false);
+      return;
     }
 
     const { error: rpcError } = await supabase.rpc("join_family", {
@@ -146,7 +138,7 @@ export default function SignupPage() {
               id="password"
               type="password"
               autoComplete="new-password"
-              minLength={6}
+              minLength={MIN_PASSWORD_LENGTH}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required

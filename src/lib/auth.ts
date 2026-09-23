@@ -1,6 +1,9 @@
 /** Dominio ficticio para convertir usernames en emails de Supabase Auth. */
 const PSEUDO_DOMAIN = "familyexpenses.local";
 
+/** Mínimo del proyecto de Supabase (compartido; lo fija la config de Auth). */
+export const MIN_PASSWORD_LENGTH = 8;
+
 export function usernameToEmail(username: string): string {
   return `${normalizeUsername(username)}@${PSEUDO_DOMAIN}`;
 }

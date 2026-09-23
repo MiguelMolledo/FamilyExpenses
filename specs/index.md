@@ -46,7 +46,7 @@ Cuenta de ahorro familiar, aportaciones, retiradas, intereses, actualizar saldo,
 
 ## [Autenticación y familias](./auth-familias.md)
 
-Usuarios con pseudo-email, crear/unirse a familia, código de invitación, RLS por familia, schema `family` compartido con GymStats, seguridad de datos.
+Usuarios con pseudo-email, crear/unirse a familia, código de invitación, RLS por familia, schema `family` en el proyecto compartido DndMaster, seguridad de datos.
 
 **Source**: `src/lib/auth.ts`, `src/app/(auth)/`, `src/proxy.ts`, `supabase/migrations/`
 

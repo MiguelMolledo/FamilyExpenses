@@ -4,7 +4,7 @@ Usuarios con username + contraseña (sin email real) agrupados en familias. Todo
 
 ## Capacidades
 
-- Registro SOLO por invitación: hace falta el código de una familia existente (el código se valida antes de crear la cuenta, sin dejar usuarios huérfanos). Login con username y contraseña. El enlace `/signup?codigo=XXXX` llega con el código ya puesto.
+- Registro SOLO por invitación: hace falta el código de una familia existente (el código se valida en el servidor antes de crear la cuenta, sin dejar usuarios huérfanos). Login con username y contraseña. El enlace `/signup?codigo=XXXX` llega con el código ya puesto.
 - Las familias nuevas se crean a mano (`create_family` vía psql/service_role); la app no expone esa opción.
 - El login tiene un botón «Probar la app (cuenta de ejemplo)»: entra como `ejemplo` en la Familia Ejemplo, una sandbox pública con presupuesto de IA de 1 €/mes (ver [chat](./chat.md)). La Familia Demo (`demo`/`blancademo`) queda para uso interno, sin límite.
 - El username se normaliza (minúsculas, sin acentos ni símbolos, mínimo 3 caracteres) y se convierte en pseudo-email `@familyexpenses.local` para Supabase Auth; el formulario avisa si lo tecleado se normalizará.
@@ -19,7 +19,8 @@ Usuarios con username + contraseña (sin email real) agrupados en familias. Todo
 - `invite_code`: 12 hex criptográficos para familias nuevas (las antiguas conservan el suyo de 8).
 - Ninguna función del schema `family` es ejecutable por PUBLIC (migración 00008); `anon` solo puede `username_exists` e `invite_code_valid`.
 - Las API routes (chat, import) exigen tener perfil/familia (403 «Sin familia»): una cuenta de Auth huérfana no puede gastar tokens de IA.
-- Las tablas viven en el schema Postgres `family` dentro del proyecto Supabase de GymStats (free tier); los clientes usan `db: { schema: "family" }`.
+- Las tablas viven en el schema Postgres `family` dentro del proyecto Supabase compartido **DndMaster** (`neklxghwqtjinyufnhxh`, desde 2026-09-23; antes en el de GymStats), junto a rolApp (`public`), GymStats (`gymstats`) y terrain (`terrain`); los clientes usan `db: { schema: "family" }`. Nunca `supabase db push` contra ese proyecto: el SQL se aplica a mano sobre `family.*`.
+- `auth.users` es compartido y el registro público del proyecto está desactivado: la cuenta se crea en el servidor (`src/app/(auth)/signup/actions.ts`, service role, tras validar el código) con `app = "family"` en `app_metadata` y `user_metadata`. rolApp niega la sesión a esos usuarios y no les crea perfil; los triggers de alta de las otras apps los ignoran. Contraseña mínima: 8 caracteres (config de Auth del proyecto).
 
 ## Specs relacionados
 
